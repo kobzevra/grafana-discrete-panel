@@ -14,6 +14,7 @@ export const ProductionTimelinePanel: React.FC<PanelProps<ProductionTimelineOpti
   timeZone,
   options,
   replaceVariables,
+  onChangeTimeRange,
 }) => {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -34,6 +35,7 @@ export const ProductionTimelinePanel: React.FC<PanelProps<ProductionTimelineOpti
         range,
         nowMs,
         dimensionFilters: behavior.dimensionFilters,
+        fieldFilters: behavior.fieldFilters,
         durationRules: behavior.durationRules,
         focusJob: behavior.focusJob,
       }),
@@ -64,11 +66,14 @@ export const ProductionTimelinePanel: React.FC<PanelProps<ProductionTimelineOpti
   }
 
   const diagnosticHeight = diagnostics.length > 0 ? Math.min(56, 18 * diagnostics.length) : 0;
-  const availableHeight = Math.max(40, height - diagnosticHeight);
-  const legendHeight = normalizedOptions.showLegend
-    ? Math.min(150, Math.max(70, availableHeight * 0.3))
-    : 0;
-  const canvasHeight = Math.max(40, availableHeight - legendHeight);
+  const availableHeight = Math.max(24, height - diagnosticHeight);
+  const preferredCanvasHeight =
+    model.machineIds.length * normalizedOptions.rowHeight + (normalizedOptions.showAxis ? 24 : 0);
+  const minimumLegendHeight = normalizedOptions.showLegend ? Math.min(70, Math.max(0, availableHeight - 24)) : 0;
+  const canvasHeight = Math.max(
+    24,
+    Math.min(preferredCanvasHeight || 24, Math.max(24, availableHeight - minimumLegendHeight))
+  );
 
   return (
     <div style={{ width, height, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -81,21 +86,30 @@ export const ProductionTimelinePanel: React.FC<PanelProps<ProductionTimelineOpti
           ))}
         </div>
       ) : null}
-      <TimelineCanvas
-        intervals={model.intervals}
-        noData={model.noData}
-        machineIds={model.machineIds}
-        range={range}
-        width={width}
-        height={canvasHeight}
-        rowHeight={normalizedOptions.rowHeight}
-        showAxis={normalizedOptions.showAxis}
-        timeZone={timeZone}
-        stateColors={normalizedOptions.stateColors}
-      />
+      <div style={{ flex: '0 0 auto', height: canvasHeight }}>
+        <TimelineCanvas
+          intervals={model.intervals}
+          noData={model.noData}
+          machineIds={model.machineIds}
+          range={range}
+          width={width}
+          height={canvasHeight}
+          rowHeight={normalizedOptions.rowHeight}
+          showAxis={normalizedOptions.showAxis}
+          timeZone={timeZone}
+          stateColors={normalizedOptions.stateColors}
+          colorMappings={normalizedOptions.colorMappings}
+          interactions={normalizedOptions.interactions}
+          onChangeTimeRange={(nextRange) => onChangeTimeRange(nextRange)}
+        />
+      </div>
       {normalizedOptions.showLegend && model.legend ? (
-        <div style={{ height: legendHeight, overflow: 'auto', padding: '0 6px' }}>
-          <TimelineLegend legend={model.legend} stateColors={normalizedOptions.stateColors} />
+        <div style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: '0 6px' }}>
+          <TimelineLegend
+            legend={model.legend}
+            stateColors={normalizedOptions.stateColors}
+            colorMappings={normalizedOptions.colorMappings}
+          />
         </div>
       ) : null}
     </div>
