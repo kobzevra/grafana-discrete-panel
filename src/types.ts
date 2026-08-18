@@ -31,6 +31,31 @@ export interface DurationRule {
   maxMs?: number;
 }
 
+export interface FieldFilterRule {
+  field: string;
+  values: string[];
+}
+
+export interface DurationFilterRuleOption {
+  state: string;
+  minSeconds?: number;
+  maxSeconds?: number;
+}
+
+export interface ColorMappingOption {
+  field: string;
+  value: string;
+  color: string;
+}
+
+export interface TimelineInteractionOptions {
+  dragPan: boolean;
+  segmentZoom: boolean;
+  wheelPan: boolean;
+  ctrlWheelZoom: boolean;
+  shiftWheelPan: boolean;
+}
+
 export type DiagnosticSeverity = 'info' | 'warning' | 'error';
 
 export interface PanelDiagnostic {
@@ -138,6 +163,7 @@ export interface AdapterResult {
   intervals: NormalizedInterval[];
   diagnostics: PanelDiagnostic[];
   availableLogicalFields: Set<string>;
+  availableSourceFields: Set<string>;
 }
 
 export interface TimelineScale {
@@ -164,6 +190,7 @@ export interface TimelineModel {
 
 export type JobMode = 'none' | 'filter' | 'focus';
 
+/** Legacy fixed bindings retained for saved dashboards. New dashboards use filterRows. */
 export interface FilterBindingOptions {
   machine: string;
   job: string;
@@ -179,6 +206,7 @@ export interface FilterBindingOptions {
   commanded_speed: string;
 }
 
+/** Legacy duration fields retained for saved dashboards. New dashboards use durationRules. */
 export interface DurationFilterOptions {
   idleMinSeconds?: number;
   idleMaxSeconds?: number;
@@ -191,8 +219,15 @@ export interface ProductionTimelineOptions {
   rowHeight: number;
   showAxis: boolean;
   showLegend: boolean;
+  /** Legacy state overrides retained for backward compatibility. */
   stateColors: Record<string, string>;
+  colorMappings: ColorMappingOption[];
   jobMode: JobMode;
+  /** Legacy fixed bindings retained for backward compatibility. */
   filters: FilterBindingOptions;
+  filterRows: FieldFilterRule[];
+  /** Legacy fixed Idle/Setup rules retained for backward compatibility. */
   duration: DurationFilterOptions;
+  durationRules: DurationFilterRuleOption[];
+  interactions: TimelineInteractionOptions;
 }
