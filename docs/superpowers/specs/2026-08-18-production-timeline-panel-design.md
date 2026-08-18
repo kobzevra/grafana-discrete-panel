@@ -1,7 +1,7 @@
 # Production Timeline Panel for Grafana 13.1.1 — Design
 
 **Date:** 2026-08-18  
-**Status:** chat design approved; written spec pending user review  
+**Status:** self-reviewed and approved for implementation planning  
 **Repository:** `kobzevra/grafana-discrete-panel`  
 **Target branch:** `rewrite/grafana-13-production-timeline`
 
@@ -142,7 +142,7 @@ operator
 material
 customer
 manager
-profile
+color_profile
 print_mode
 drop_size
 tool
@@ -322,7 +322,7 @@ operator
 material
 customer
 manager
-profile
+color_profile
 print_mode
 drop_size
 tool
