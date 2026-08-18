@@ -91,8 +91,12 @@ export function resolvePanelBehavior(
   const idle = compactRule(secondsToMs(options.duration.idleMinSeconds), secondsToMs(options.duration.idleMaxSeconds));
   const setup = compactRule(secondsToMs(options.duration.setupMinSeconds), secondsToMs(options.duration.setupMaxSeconds));
   const durationRules: DurationRules = {};
-  if (idle) durationRules.idle = idle;
-  if (setup) durationRules.setup = setup;
+  if (idle) {
+    durationRules.idle = idle;
+  }
+  if (setup) {
+    durationRules.setup = setup;
+  }
 
   return { dimensionFilters, durationRules, focusJob, diagnostics };
 }

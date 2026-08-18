@@ -28,3 +28,24 @@ test('pipeline refuses exact totals for conflicting overlaps', () => {
   const model = buildTimelineModel({ frames: [data], mappings, range, nowMs: range.to, dimensionFilters: {}, durationRules: {} });
   expect(model.blocked).toBe(true); expect(model.legend).toBeNull();
 });
+
+test('selected machine with no source row is rendered as full-range no-data', () => {
+  const data = frame([{ machine_id: 'M1', state: 'idle', started_at: 0, ended_at: 60*M }]);
+  const model = buildTimelineModel({
+    frames: [data], mappings, range, nowMs: range.to,
+    dimensionFilters: { machine: ['M2'] }, durationRules: {},
+  });
+  expect(model.machineIds).toEqual(['M2']);
+  expect(model.noData).toEqual([{ machineId: 'M2', start: range.from, end: range.to, durationMs: range.to - range.from }]);
+});
+
+test('requested machine remains visible as no-data when no source intervals overlap range', () => {
+  const outside = frame([{ machine_id: 'M1', state: 'idle', started_at: 120*M, ended_at: 180*M }]);
+  const model = buildTimelineModel({
+    frames: [outside], mappings, range, nowMs: range.to,
+    dimensionFilters: { machine: ['M2'] }, durationRules: {},
+  });
+  expect(model.machineIds).toEqual(['M2']);
+  expect(model.noData).toEqual([{ machineId: 'M2', start: range.from, end: range.to, durationMs: range.to - range.from }]);
+  expect(model.diagnostics.some((diagnostic) => diagnostic.code === 'no-source-data')).toBe(true);
+});
