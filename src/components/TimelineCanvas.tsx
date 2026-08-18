@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { dateTimeFormat } from '@grafana/data';
 import type { TimeZone } from '@grafana/schema';
-import type { CoverageRegion, DisplayInterval, TimelineRange } from '../types';
+import type {
+  ColorMappingOption,
+  CoverageRegion,
+  DisplayInterval,
+  TimelineInteractionOptions,
+  TimelineRange,
+} from '../types';
 import { createTimelineScale } from '../domain/scale';
 import { createTimelineLayout } from '../domain/layout';
 import { buildHitIndex, hitTest } from '../domain/hitTest';
@@ -15,6 +21,14 @@ interface HoverState {
   y: number;
 }
 
+interface DragState {
+  mode: 'pan' | 'select';
+  pointerId: number;
+  startX: number;
+  currentX: number;
+  startRange: TimelineRange;
+}
+
 interface Props {
   intervals: DisplayInterval[];
   noData: CoverageRegion[];
@@ -26,10 +40,25 @@ interface Props {
   showAxis: boolean;
   timeZone: TimeZone;
   stateColors: Record<string, string>;
+  colorMappings?: ColorMappingOption[];
+  interactions?: TimelineInteractionOptions;
+  onChangeTimeRange?: (range: TimelineRange) => void;
 }
+
+const DEFAULT_INTERACTIONS: TimelineInteractionOptions = {
+  dragPan: true,
+  segmentZoom: true,
+  wheelPan: true,
+  ctrlWheelZoom: true,
+  shiftWheelPan: true,
+};
 
 function tickCount(width: number): number {
   return Math.max(2, Math.min(8, Math.floor(width / 120)));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 export const TimelineCanvas: React.FC<Props> = ({
@@ -43,9 +72,14 @@ export const TimelineCanvas: React.FC<Props> = ({
   showAxis,
   timeZone,
   stateColors,
+  colorMappings = [],
+  interactions = DEFAULT_INTERACTIONS,
+  onChangeTimeRange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const dragRef = useRef<DragState | null>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [selection, setSelection] = useState<{ startX: number; currentX: number } | null>(null);
   const layout = useMemo(
     () => createTimelineLayout({ width, height, machineCount: machineIds.length, rowHeight, showAxis }),
     [width, height, machineIds.length, rowHeight, showAxis]
@@ -114,7 +148,7 @@ export const TimelineCanvas: React.FC<Props> = ({
       const x2 = scale.timeToX(interval.visibleEnd);
       const y = layout.rowTop(index) + 3;
       const segmentHeight = Math.max(2, layout.effectiveRowHeight - 6);
-      ctx.fillStyle = getDisplayColor(interval.displayClass, interval.job, stateColors);
+      ctx.fillStyle = getDisplayColor(interval.displayClass, interval.job, stateColors, colorMappings, interval);
       ctx.fillRect(x1, y, Math.max(1, x2 - x1), segmentHeight);
       if (x2 - x1 > 52) {
         ctx.save();
@@ -143,26 +177,150 @@ export const TimelineCanvas: React.FC<Props> = ({
       }
       ctx.textAlign = 'start';
     }
-  }, [height, intervals, layout, machineIds, noData, range, scale, showAxis, stateColors, timeZone, width]);
 
-  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    if (x < layout.plotLeft || x >= layout.plotRight || y < 0 || y >= layout.plotBottom) {
-      setHover(null);
-      return;
+    if (selection) {
+      const x1 = clamp(Math.min(selection.startX, selection.currentX), layout.plotLeft, layout.plotRight);
+      const x2 = clamp(Math.max(selection.startX, selection.currentX), layout.plotLeft, layout.plotRight);
+      ctx.fillStyle = 'rgba(100,160,255,.18)';
+      ctx.fillRect(x1, 0, Math.max(0, x2 - x1), layout.plotBottom);
+      ctx.strokeStyle = 'rgba(120,180,255,.9)';
+      ctx.strokeRect(x1 + 0.5, 0.5, Math.max(0, x2 - x1 - 1), Math.max(0, layout.plotBottom - 1));
     }
+  }, [
+    colorMappings,
+    height,
+    intervals,
+    layout,
+    machineIds,
+    noData,
+    range,
+    scale,
+    selection,
+    showAxis,
+    stateColors,
+    timeZone,
+    width,
+  ]);
 
+  const pointForEvent = (event: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const intervalAt = (x: number, y: number): DisplayInterval | null => {
+    if (x < layout.plotLeft || x >= layout.plotRight || y < 0 || y >= layout.plotBottom) {
+      return null;
+    }
     const row = Math.floor(y / layout.effectiveRowHeight);
     const machineId = machineIds[row];
-    if (!machineId) {
+    return machineId ? hitTest(hitIndex, machineId, scale.xToTime(x)) : null;
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0 || !onChangeTimeRange) {
+      return;
+    }
+    const { x, y } = pointForEvent(event);
+    if (x < layout.plotLeft || x > layout.plotRight || y < 0 || y > layout.plotBottom + layout.axisHeight) {
+      return;
+    }
+    const interval = intervalAt(x, y);
+    const mode = interval && interactions.segmentZoom ? 'select' : interactions.dragPan ? 'pan' : null;
+    if (!mode) {
+      return;
+    }
+    setHover(null);
+    dragRef.current = { mode, pointerId: event.pointerId, startX: x, currentX: x, startRange: { ...range } };
+    if (mode === 'select') {
+      setSelection({ startX: x, currentX: x });
+    }
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const { x, y } = pointForEvent(event);
+    const drag = dragRef.current;
+    if (drag && drag.pointerId === event.pointerId) {
+      drag.currentX = x;
       setHover(null);
+      if (drag.mode === 'select') {
+        setSelection({ startX: drag.startX, currentX: x });
+      }
       return;
     }
 
-    const interval = hitTest(hitIndex, machineId, scale.xToTime(x));
+    const interval = intervalAt(x, y);
     setHover(interval ? { interval, x, y } : null);
+  };
+
+  const finishDrag = (event: React.PointerEvent<HTMLCanvasElement>, cancelled = false) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    const { x } = pointForEvent(event);
+    dragRef.current = null;
+    setSelection(null);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (cancelled || !onChangeTimeRange) {
+      return;
+    }
+
+    const deltaX = x - drag.startX;
+    if (Math.abs(deltaX) < 4 || scale.width <= 0) {
+      return;
+    }
+    if (drag.mode === 'pan') {
+      const duration = drag.startRange.to - drag.startRange.from;
+      const deltaMs = -(deltaX / scale.width) * duration;
+      onChangeTimeRange({ from: drag.startRange.from + deltaMs, to: drag.startRange.to + deltaMs });
+      return;
+    }
+
+    const x1 = clamp(Math.min(drag.startX, x), layout.plotLeft, layout.plotRight);
+    const x2 = clamp(Math.max(drag.startX, x), layout.plotLeft, layout.plotRight);
+    const from = scale.xToTime(x1);
+    const to = scale.xToTime(x2);
+    if (to > from) {
+      onChangeTimeRange({ from, to });
+    }
+  };
+
+  const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => finishDrag(event);
+  const onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => finishDrag(event, true);
+
+  const onWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
+    if (!onChangeTimeRange || scale.width <= 0) {
+      return;
+    }
+    const { x } = pointForEvent(event);
+    if (x < layout.plotLeft || x > layout.plotRight) {
+      return;
+    }
+    const duration = range.to - range.from;
+    if (duration <= 0) {
+      return;
+    }
+    event.preventDefault();
+    setHover(null);
+
+    if (event.ctrlKey && interactions.ctrlWheelZoom) {
+      const cursorTime = scale.xToTime(x);
+      const anchor = (cursorTime - range.from) / duration;
+      const factor = Math.exp(event.deltaY * 0.002);
+      const newDuration = clamp(duration * factor, 1000, 10 * 365 * 24 * 60 * 60 * 1000);
+      const from = cursorTime - anchor * newDuration;
+      onChangeTimeRange({ from, to: from + newDuration });
+      return;
+    }
+
+    if (!interactions.wheelPan) {
+      return;
+    }
+    const rawDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    const multiplier = event.shiftKey && interactions.shiftWheelPan ? 3 : 1;
+    const deltaMs = (rawDelta * multiplier * duration) / Math.max(200, scale.width);
+    onChangeTimeRange({ from: range.from + deltaMs, to: range.to + deltaMs });
   };
 
   return (
@@ -171,8 +329,17 @@ export const TimelineCanvas: React.FC<Props> = ({
         ref={canvasRef}
         role="img"
         aria-label={`Production timeline with ${machineIds.length} machine rows`}
+        onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerLeave={() => setHover(null)}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onPointerLeave={() => {
+          if (!dragRef.current) {
+            setHover(null);
+          }
+        }}
+        onWheel={onWheel}
+        style={{ touchAction: 'none', cursor: dragRef.current ? 'grabbing' : 'default' }}
       />
       {hover ? <TimelineTooltip interval={hover.interval} x={hover.x} y={hover.y} timeZone={timeZone} /> : null}
       <ul style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
