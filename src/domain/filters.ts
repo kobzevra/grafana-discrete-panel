@@ -1,15 +1,30 @@
-import type { DimensionFilters, DimensionKey, DurationRules, VisibleInterval } from '../types.ts';
+import type { DimensionFilters, DimensionKey, DurationRules, FieldFilterRule, VisibleInterval } from '../types.ts';
 import { matchesDurationRule } from './intervals.ts';
 
-function valueFor(row: VisibleInterval, key: DimensionKey): unknown {
+export function valueForField(row: VisibleInterval, key: string): unknown {
   switch (key) {
     case 'machine':
+    case 'machine_id':
       return row.machineId;
+    case 'state':
+      return row.state;
     case 'job':
       return row.job;
+    case 'run_id':
+      return row.runId;
+    case 'machine_type':
+      return row.machineType;
+    case 'quality':
+      return row.quality;
+    case 'details':
+      return row.details;
     default:
       return row.dimensions[key];
   }
+}
+
+function valueFor(row: VisibleInterval, key: DimensionKey): unknown {
+  return valueForField(row, key);
 }
 
 export function applyDimensionFilters(
@@ -30,6 +45,19 @@ export function applyDimensionFilters(
         return false;
       }
       return selected.includes(String(value));
+    })
+  );
+}
+
+export function applyFieldFilters(rows: readonly VisibleInterval[], rules: readonly FieldFilterRule[]): VisibleInterval[] {
+  const active = rules.filter((rule) => rule.field.trim() && rule.values.length > 0);
+  if (active.length === 0) {
+    return [...rows];
+  }
+  return rows.filter((row) =>
+    active.every((rule) => {
+      const value = valueForField(row, rule.field.trim());
+      return value !== undefined && value !== null && rule.values.includes(String(value));
     })
   );
 }
