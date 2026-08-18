@@ -23,11 +23,9 @@ Required logical fields:
 | `started_at` | `started_at` | interval start |
 | `ended_at` | `ended_at` | interval end; null means current/open |
 
-Optional fields:
+Optional logical fields include `machine_type`, `original_duration`, `job`, `run_id`, `display_class`, `operator`, `material`, `customer`, `manager`, `color_profile`, `print_mode`, `drop_size`, `tool`, `preset`, `commanded_speed`, `quality`, and `details`.
 
-`machine_type`, `duration`, `job`, `run_id`, `display_class`, `operator`, `material`, `customer`, `manager`, `color_profile`, `print_mode`, `drop_size`, `tool`, `preset`, `commanded_speed`, `quality`, `details`.
-
-Every physical field name is configurable in panel options. The optional mapped `duration` field is interpreted as **milliseconds**. If it is absent for a closed interval, duration is derived from `ended_at - started_at`.
+Every physical field name is configurable in panel options. `original_duration` has **no default physical mapping** because the project schema does not yet define one universal storage unit. If it is explicitly mapped, the panel interprets that value as **milliseconds**. When it is not mapped, a closed interval's original duration is safely derived from `ended_at - started_at`.
 
 Grafana time fields may provide epoch milliseconds. Explicit ISO-8601 string fields are also accepted. Arbitrary numeric non-time fields are not guessed to be timestamps.
 
@@ -71,9 +69,9 @@ Job selection modes:
 - `Filter`: only matching jobs survive the job dimension filter.
 - `Focus`: the selected job becomes `Selected job`, all other running jobs become `Other jobs`, and non-running machine states remain visible.
 
-A focus binding must resolve to exactly one job. A multi-value selection is not guessed; the panel shows a diagnostic instead.
+A focus binding must resolve to exactly one job and requires an available mapped job field. A multi-value selection is not guessed; the panel shows a diagnostic instead. Focus legend keeps explicit Selected-job and Other-jobs entries even when one visible duration is zero.
 
-Filter bindings can be literal values or Grafana variable expressions. A JSON-array result is treated as a multi-select binding.
+Filter bindings can be literal values or Grafana variable expressions. For dashboard multi-select variables, use a JSON-formatted expansion such as `${variable:json}` so the panel receives an unambiguous array.
 
 ## Legend
 
@@ -102,7 +100,7 @@ npm run build
 npm run react:detect
 ```
 
-Repository CI performs these checks on the rewrite branch. Runtime acceptance is separate from build acceptance and must be performed against Grafana 13.1.1 before production deployment.
+Repository CI performs these checks on the rewrite branch. Runtime acceptance is separate from build acceptance and is exercised against Grafana 13.1.1 with a fixed interval fixture.
 
 ## Upstream attribution
 

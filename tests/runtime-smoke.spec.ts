@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('Grafana 13.1.1 renders interval and focus fixtures without runtime exceptions', async ({ page }) => {
+test('Grafana 13.1.1 renders interval, tooltip, and focus fixtures without runtime exceptions', async ({ page }) => {
   const pageErrors: string[] = [];
   const pluginConsoleErrors: string[] = [];
 
@@ -47,6 +47,17 @@ test('Grafana 13.1.1 renders interval and focus fixtures without runtime excepti
         text.includes('00:15:00')
     )
   ).toBe(true);
+
+  const box = await canvases.first().boundingBox();
+  expect(box).not.toBeNull();
+  if (box) {
+    await page.mouse.move(box.x + 160, box.y + 14);
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toContainText('Job A');
+    await expect(tooltip).toContainText('Visible start');
+    await expect(tooltip).toContainText('Visible end');
+    await expect(tooltip).toContainText('Visible duration');
+  }
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByLabel('Production timeline legend')).toHaveCount(2);

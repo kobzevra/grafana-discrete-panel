@@ -13,7 +13,7 @@ export const DEFAULT_OPTIONS: ProductionTimelineOptions = {
     state: 'state',
     startedAt: 'started_at',
     endedAt: 'ended_at',
-    originalDuration: 'duration',
+    originalDuration: '',
     job: 'job',
     runId: 'run_id',
     displayClass: 'display_class',

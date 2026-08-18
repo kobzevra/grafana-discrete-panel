@@ -6,7 +6,7 @@ import { DEFAULT_OPTIONS } from './domain/panelOptions';
 const fields: Array<[keyof ProductionTimelineOptions['fields'], string, string]> = [
   ['machineId', 'Machine ID', 'machine_id'], ['machineType', 'Machine type', 'machine_type'],
   ['state', 'State', 'state'], ['startedAt', 'Started at', 'started_at'], ['endedAt', 'Ended at', 'ended_at'],
-  ['originalDuration', 'Original duration (ms)', 'duration'], ['job', 'Job', 'job'], ['runId', 'Run ID', 'run_id'],
+  ['originalDuration', 'Original duration (ms)', ''], ['job', 'Job', 'job'], ['runId', 'Run ID', 'run_id'],
   ['displayClass', 'Display class', 'display_class'], ['operator', 'Operator', 'operator'], ['material', 'Material', 'material'],
   ['customer', 'Customer', 'customer'], ['manager', 'Manager', 'manager'], ['colorProfile', 'Color profile', 'color_profile'],
   ['printMode', 'Print mode', 'print_mode'], ['dropSize', 'Drop size', 'drop_size'], ['tool', 'Tool', 'tool'],
