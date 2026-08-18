@@ -1,3 +1,5 @@
+import type { ColorMappingOption, DisplayInterval, NormalizedInterval } from '../types';
+
 const STATE_COLORS: Record<string, string> = {
   offline: '#6B7280',
   idle: '#9CA3AF',
@@ -32,6 +34,39 @@ function fnv1a32Utf8(value: string): number {
   return hash >>> 0;
 }
 
+function intervalValue(interval: NormalizedInterval | DisplayInterval | undefined, field: string): unknown {
+  if (!interval) {
+    return undefined;
+  }
+  switch (field) {
+    case 'machine':
+    case 'machine_id': return interval.machineId;
+    case 'state': return interval.state;
+    case 'job': return interval.job;
+    case 'run_id': return interval.runId;
+    case 'machine_type': return interval.machineType;
+    case 'quality': return interval.quality;
+    case 'details': return interval.details;
+    default: return interval.dimensions[field];
+  }
+}
+
+function mappedColor(
+  mappings: readonly ColorMappingOption[],
+  interval: NormalizedInterval | DisplayInterval | undefined
+): string | undefined {
+  for (const mapping of mappings) {
+    if (!mapping.field.trim() || !mapping.value || !mapping.color) {
+      continue;
+    }
+    const value = intervalValue(interval, mapping.field.trim());
+    if (value !== undefined && value !== null && String(value) === mapping.value) {
+      return mapping.color;
+    }
+  }
+  return undefined;
+}
+
 export function getStateColor(state: string, overrides: Record<string, string> = {}): string {
   const key = state.trim().toLowerCase();
   return overrides[key] ?? STATE_COLORS[key] ?? STATE_COLORS.unknown;
@@ -45,8 +80,14 @@ export function getJobColor(job: string): string {
 export function getDisplayColor(
   displayClass: string,
   job: string | undefined,
-  stateOverrides: Record<string, string> = {}
+  stateOverrides: Record<string, string> = {},
+  colorMappings: readonly ColorMappingOption[] = [],
+  interval?: NormalizedInterval | DisplayInterval
 ): string {
+  const override = mappedColor(colorMappings, interval);
+  if (override) {
+    return override;
+  }
   if (displayClass === 'selected-job' || displayClass === 'other-jobs') {
     return getStateColor(displayClass, stateOverrides);
   }
