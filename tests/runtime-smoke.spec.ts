@@ -1,9 +1,20 @@
 import { expect, test } from '@playwright/test';
 
+function timeParamMs(value: string | null): number {
+  if (!value) {
+    return Number.NaN;
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric;
+  }
+  return Date.parse(value);
+}
+
 function absoluteRangeFromUrl(url: string): { from: number; to: number } | null {
   const parsed = new URL(url);
-  const from = Number(parsed.searchParams.get('from'));
-  const to = Number(parsed.searchParams.get('to'));
+  const from = timeParamMs(parsed.searchParams.get('from'));
+  const to = timeParamMs(parsed.searchParams.get('to'));
   return Number.isFinite(from) && Number.isFinite(to) && to > from ? { from, to } : null;
 }
 
@@ -73,44 +84,69 @@ test('Grafana 13.1.1 renders interval, tooltip, compact layout, and time interac
     await expect(tooltip).toContainText('Visible duration');
 
     // Wheel pan must update Grafana's dashboard range, not only a local viewport.
-    await page.mouse.move(box.x + 320, box.y + 14);
-    await page.mouse.wheel(0, 120);
-    await expect.poll(() => absoluteRangeFromUrl(page.url())).not.toBeNull();
-    const panned = absoluteRangeFromUrl(page.url());
-    expect(panned).not.toBeNull();
+    const beforePan = absoluteRangeFromUrl(page.url());
+    expect(beforePan).not.toBeNull();
+    if (beforePan) {
+      await page.mouse.move(box.x + 320, box.y + 14);
+      await page.mouse.wheel(0, 120);
+      await expect.poll(() => absoluteRangeFromUrl(page.url())?.from ?? null).not.toBe(beforePan.from);
+      const panned = absoluteRangeFromUrl(page.url());
+      expect(panned).not.toBeNull();
+      if (panned) {
+        expect(panned.to - panned.from).toBe(beforePan.to - beforePan.from);
 
-    // Ctrl+wheel zooms around the cursor and changes the dashboard duration.
-    if (panned) {
-      const beforeDuration = panned.to - panned.from;
-      await page.keyboard.down('Control');
-      await page.mouse.wheel(0, -120);
-      await page.keyboard.up('Control');
-      await expect.poll(() => absoluteRangeFromUrl(page.url())?.to - (absoluteRangeFromUrl(page.url())?.from ?? 0)).not.toBe(beforeDuration);
-      const zoomed = absoluteRangeFromUrl(page.url());
-      expect(zoomed).not.toBeNull();
-      if (zoomed) {
-        expect(zoomed.to - zoomed.from).toBeLessThan(beforeDuration);
+        // Ctrl+wheel zooms around the cursor and changes the dashboard duration.
+        const beforeDuration = panned.to - panned.from;
+        await page.keyboard.down('Control');
+        await page.mouse.wheel(0, -120);
+        await page.keyboard.up('Control');
+        await expect.poll(() => {
+          const current = absoluteRangeFromUrl(page.url());
+          return current ? current.to - current.from : Number.POSITIVE_INFINITY;
+        }).toBeLessThan(beforeDuration);
       }
     }
   }
 
-  // Reload the fixture and verify drag-on-segment selection zooms the global range.
+  // Reload the fixture and verify drag on the axis pans the global range.
   await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded' });
-  const freshCanvas = page.locator('canvas[aria-label="Production timeline with 2 machine rows"]').first();
+  let freshCanvas = page.locator('canvas[aria-label="Production timeline with 2 machine rows"]').first();
   await expect(freshCanvas).toBeVisible();
-  const freshBox = await freshCanvas.boundingBox();
+  let freshBox = await freshCanvas.boundingBox();
+  const beforeDragPan = absoluteRangeFromUrl(page.url());
   expect(freshBox).not.toBeNull();
-  if (freshBox) {
+  expect(beforeDragPan).not.toBeNull();
+  if (freshBox && beforeDragPan) {
+    await page.mouse.move(freshBox.x + 320, freshBox.y + 68);
+    await page.mouse.down();
+    await page.mouse.move(freshBox.x + 400, freshBox.y + 68, { steps: 4 });
+    await page.mouse.up();
+    await expect.poll(() => absoluteRangeFromUrl(page.url())?.from ?? null).not.toBe(beforeDragPan.from);
+    const afterDragPan = absoluteRangeFromUrl(page.url());
+    expect(afterDragPan).not.toBeNull();
+    if (afterDragPan) {
+      expect(afterDragPan.to - afterDragPan.from).toBe(beforeDragPan.to - beforeDragPan.from);
+    }
+  }
+
+  // Reload once more and verify drag-on-segment selection zooms the global range.
+  await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded' });
+  freshCanvas = page.locator('canvas[aria-label="Production timeline with 2 machine rows"]').first();
+  await expect(freshCanvas).toBeVisible();
+  freshBox = await freshCanvas.boundingBox();
+  const beforeSelection = absoluteRangeFromUrl(page.url());
+  expect(freshBox).not.toBeNull();
+  expect(beforeSelection).not.toBeNull();
+  if (freshBox && beforeSelection) {
     await page.mouse.move(freshBox.x + 160, freshBox.y + 14);
     await page.mouse.down();
     await page.mouse.move(freshBox.x + 310, freshBox.y + 14, { steps: 4 });
     await page.mouse.up();
-    await expect.poll(() => absoluteRangeFromUrl(page.url())).not.toBeNull();
-    const selected = absoluteRangeFromUrl(page.url());
-    expect(selected).not.toBeNull();
-    if (selected) {
-      expect(selected.to - selected.from).toBeLessThan(105 * 60 * 1000);
-    }
+    const beforeDuration = beforeSelection.to - beforeSelection.from;
+    await expect.poll(() => {
+      const selected = absoluteRangeFromUrl(page.url());
+      return selected ? selected.to - selected.from : Number.POSITIVE_INFINITY;
+    }).toBeLessThan(beforeDuration);
   }
 
   await page.reload({ waitUntil: 'domcontentloaded' });
