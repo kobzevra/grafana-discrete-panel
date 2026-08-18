@@ -1,0 +1,43 @@
+name: Latest Grafana API compatibility check
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  compatibilitycheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Find module.ts or module.tsx
+        id: find-module-ts
+        shell: bash
+        run: |
+          MODULETS="$(find ./src -type f \( -name "module.ts" -o -name "module.tsx" \))"
+          echo "modulets=${MODULETS}" >> "$GITHUB_OUTPUT"
+
+      - name: Compatibility check
+        uses: grafana/plugin-actions/is-compatible@is-compatible/v1.0.3
+        with:
+          module: ${{ steps.find-module-ts.outputs.modulets }}
+          comment-pr: "no"
+          fail-if-incompatible: "yes"
