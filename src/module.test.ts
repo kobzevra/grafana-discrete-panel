@@ -1,5 +1,5 @@
-describe('placeholder test', () => {
-  it('should return true', () => {
-    expect(true).toBeTruthy();
-  });
+import { plugin } from './module';
+
+test('exports the Production Timeline panel plugin', () => {
+  expect(plugin).toBeDefined();
 });

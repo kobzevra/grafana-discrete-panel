@@ -1,0 +1,19 @@
+import type { DataFrameLike, DimensionFilters, DimensionKey, DurationRules, FieldMappings, PanelDiagnostic, TimelineModel, TimelineRange } from '../types.ts';
+import { adaptDataFrames } from './dataFrameAdapter.ts'; import { validateIntervals } from './validation.ts'; import { clipIntervals, computeCoverage } from './intervals.ts'; import { applyDimensionFilters, applyDurationRules } from './filters.ts'; import { classifyIntervals, applyJobFocus } from './displayClasses.ts'; import { buildLegend } from './legend.ts';
+const FILTER_MAPPING_KEYS: Record<DimensionKey, keyof FieldMappings> = { machine:'machineId', job:'job', operator:'operator', material:'material', customer:'customer', manager:'manager', color_profile:'colorProfile', print_mode:'printMode', drop_size:'dropSize', tool:'tool', preset:'preset', commanded_speed:'commandedSpeed' };
+export interface BuildTimelineModelArgs { frames: readonly DataFrameLike[]; mappings: FieldMappings; range: TimelineRange; nowMs: number; dimensionFilters: DimensionFilters; durationRules: DurationRules; focusJob?: string; }
+const uniqueSorted = (values: readonly string[]) => [...new Set(values)].sort((a,b) => a.localeCompare(b));
+const activeFilters = (filters: DimensionFilters) => Object.entries(filters).filter(([,values]) => values && values.length > 0) as Array<[DimensionKey, readonly string[]]>;
+export function buildTimelineModel(args: BuildTimelineModelArgs): TimelineModel {
+  const adapted = adaptDataFrames(args.frames, args.mappings); const validated = validateIntervals(adapted.intervals); const diagnostics: PanelDiagnostic[] = [...adapted.diagnostics, ...validated.diagnostics];
+  if (adapted.diagnostics.some((d) => d.severity === 'error') || validated.hasConflicts) return { intervals: [], noData: [], legend: null, machineIds: [], diagnostics, blocked: true };
+  const clipped = clipIntervals(validated.intervals, args.range, args.nowMs);
+  if (!clipped.length) { diagnostics.push({ code:'no-source-data', severity:'info', message:'No source intervals overlap the selected range' }); return { intervals: [], noData: [], legend:{ states:[], jobs:[], denominatorMs:0 }, machineIds:[], diagnostics, blocked:false }; }
+  for (const [dimension] of activeFilters(args.dimensionFilters)) { const mappingKey = FILTER_MAPPING_KEYS[dimension]; if (!args.mappings[mappingKey] || !adapted.availableLogicalFields.has(mappingKey)) diagnostics.push({ code:'configured-filter-field-absent', severity:'error', message:`Active filter ${dimension} has no available mapped field` }); }
+  if (diagnostics.some((d) => d.code === 'configured-filter-field-absent')) return { intervals: [], noData: [], legend: null, machineIds: [], diagnostics, blocked:true };
+  const sourceMachineIds = uniqueSorted(clipped.map((row) => row.machineId)); const machineFilter = args.dimensionFilters.machine; const machineIds = machineFilter?.length ? sourceMachineIds.filter((id) => machineFilter.includes(id)) : sourceMachineIds;
+  const machineRows = clipped.filter((row) => machineIds.includes(row.machineId)); const noData = computeCoverage(machineRows, machineIds, args.range); const nonMachineFilters: DimensionFilters = { ...args.dimensionFilters }; delete nonMachineFilters.machine;
+  const dimensionFiltered = applyDimensionFilters(machineRows, nonMachineFilters); const durationFiltered = applyDurationRules(dimensionFiltered, args.durationRules); const classified = classifyIntervals(durationFiltered); const focused = applyJobFocus(classified, args.focusJob).intervals;
+  if (!focused.length && machineIds.length) diagnostics.push({ code:'no-rows-after-filters', severity:'info', message:'No intervals remain after active filters' });
+  return { intervals: focused, noData, legend: buildLegend(focused, args.range, machineIds), machineIds, diagnostics, blocked:false };
+}

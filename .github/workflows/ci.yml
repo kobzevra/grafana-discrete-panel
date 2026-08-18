@@ -1,0 +1,63 @@
+name: production-timeline-ci
+
+on:
+  push:
+    branches:
+      - rewrite/grafana-13-production-timeline
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install and verify
+        shell: bash
+        run: |
+          mkdir -p ci-logs
+          set +e
+          npm install --no-audit --no-fund 2>&1 | tee ci-logs/npm-install.log
+          install_status=${PIPESTATUS[0]}
+          if [ "$install_status" -eq 0 ]; then
+            npm run test:ci 2>&1 | tee ci-logs/test.log
+            test_status=${PIPESTATUS[0]}
+            npm run typecheck 2>&1 | tee ci-logs/typecheck.log
+            typecheck_status=${PIPESTATUS[0]}
+            npm run lint 2>&1 | tee ci-logs/lint.log
+            lint_status=${PIPESTATUS[0]}
+            npm run build 2>&1 | tee ci-logs/build.log
+            build_status=${PIPESTATUS[0]}
+            npm run react:detect 2>&1 | tee ci-logs/react-detect.log
+            react_status=${PIPESTATUS[0]}
+          else
+            test_status=99
+            typecheck_status=99
+            lint_status=99
+            build_status=99
+            react_status=99
+          fi
+          printf 'install=%s\ntest=%s\ntypecheck=%s\nlint=%s\nbuild=%s\nreact_detect=%s\n' \
+            "$install_status" "$test_status" "$typecheck_status" "$lint_status" "$build_status" "$react_status" \
+            | tee ci-logs/status.txt
+          if [ "$install_status" -ne 0 ] || [ "$test_status" -ne 0 ] || [ "$typecheck_status" -ne 0 ] || [ "$lint_status" -ne 0 ] || [ "$build_status" -ne 0 ] || [ "$react_status" -ne 0 ]; then
+            exit 1
+          fi
+      - name: Upload CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-timeline-ci-evidence
+          path: |
+            ci-logs
+            package-lock.json
+            dist
+          if-no-files-found: ignore
