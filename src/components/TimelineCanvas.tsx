@@ -339,7 +339,7 @@ export const TimelineCanvas: React.FC<Props> = ({
           }
         }}
         onWheel={onWheel}
-        style={{ touchAction: 'none', cursor: dragRef.current ? 'grabbing' : 'default' }}
+        style={{ touchAction: 'none', cursor: 'default' }}
       />
       {hover ? <TimelineTooltip interval={hover.interval} x={hover.x} y={hover.y} timeZone={timeZone} /> : null}
       <ul style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
