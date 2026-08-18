@@ -91,21 +91,21 @@ export function adaptDataFrames(frames: readonly DataFrameLike[], mappings: Fiel
   const diagnostics: PanelDiagnostic[] = [];
   const intervals: NormalizedInterval[] = [];
   const availableLogicalFields = new Set<string>();
+  const availableSourceFields = new Set<string>();
 
   for (const key of REQUIRED_KEYS) {
     if (!mappings[key]?.trim()) {
-      diagnostics.push({
-        code: 'missing-required-mapping',
-        severity: 'error',
-        message: `Missing required field mapping: ${key}`,
-      });
+      diagnostics.push({ code: 'missing-required-mapping', severity: 'error', message: `Missing required field mapping: ${key}` });
     }
   }
   if (diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
-    return { intervals, diagnostics, availableLogicalFields };
+    return { intervals, diagnostics, availableLogicalFields, availableSourceFields };
   }
 
   for (const frame of frames) {
+    for (const field of frame.fields) {
+      availableSourceFields.add(field.name);
+    }
     const required = REQUIRED_KEYS.map((key) => [key, fieldByName(frame, mappings[key])] as const);
     const presentRequired = required.filter(([, field]) => Boolean(field)).length;
     if (presentRequired === 0) {
@@ -113,11 +113,7 @@ export function adaptDataFrames(frames: readonly DataFrameLike[], mappings: Fiel
     }
     if (presentRequired !== REQUIRED_KEYS.length) {
       const missing = required.filter(([, field]) => !field).map(([key]) => key);
-      diagnostics.push({
-        code: 'mapped-field-not-found',
-        severity: 'error',
-        message: `Frame is missing required mapped fields: ${missing.join(', ')}`,
-      });
+      diagnostics.push({ code: 'mapped-field-not-found', severity: 'error', message: `Frame is missing required mapped fields: ${missing.join(', ')}` });
       continue;
     }
 
@@ -138,43 +134,30 @@ export function adaptDataFrames(frames: readonly DataFrameLike[], mappings: Fiel
       const state = stringValue(stateField, index)?.trim();
       const startedAt = parseTime(startField, index, false);
       const endedAt = parseTime(endField, index, true);
-
       if (!machineId || !state) {
-        diagnostics.push({
-          code: 'invalid-row',
-          severity: 'warning',
-          message: `Row ${index} is missing machine_id or state`,
-          machineId: machineId || undefined,
-        });
+        diagnostics.push({ code: 'invalid-row', severity: 'warning', message: `Row ${index} is missing machine_id or state`, machineId: machineId || undefined });
         continue;
       }
       if (typeof startedAt !== 'number' || endedAt === undefined) {
-        diagnostics.push({
-          code: 'invalid-timestamp',
-          severity: 'warning',
-          message: `Row ${index} has an invalid start or end timestamp`,
-          machineId,
-        });
+        diagnostics.push({ code: 'invalid-timestamp', severity: 'warning', message: `Row ${index} has an invalid start or end timestamp`, machineId });
         continue;
       }
 
       const mappedDuration = parseDuration(durationField, index);
       if (mappedDuration === undefined && durationField) {
-        diagnostics.push({
-          code: 'invalid-duration',
-          severity: 'warning',
-          message: `Row ${index} has invalid original_duration; derived duration will be used when possible`,
-          machineId,
-        });
+        diagnostics.push({ code: 'invalid-duration', severity: 'warning', message: `Row ${index} has invalid original_duration; derived duration will be used when possible`, machineId });
       }
-      const originalDurationMs =
-        mappedDuration !== undefined && mappedDuration !== null
-          ? mappedDuration
-          : endedAt !== null
-            ? Math.max(0, endedAt - startedAt)
-            : null;
+      const originalDurationMs = mappedDuration !== undefined && mappedDuration !== null
+        ? mappedDuration
+        : endedAt !== null ? Math.max(0, endedAt - startedAt) : null;
 
       const dimensions: NormalizedInterval['dimensions'] = {};
+      for (const field of frame.fields) {
+        const value = rawValue(field, index);
+        if (value !== undefined) {
+          dimensions[field.name] = value;
+        }
+      }
       for (const [mappingKey, logicalKey] of DIMENSION_MAPPING) {
         const value = rawValue(fieldByName(frame, mappings[mappingKey]), index);
         if (value !== undefined) {
@@ -199,5 +182,5 @@ export function adaptDataFrames(frames: readonly DataFrameLike[], mappings: Fiel
     }
   }
 
-  return { intervals, diagnostics, availableLogicalFields };
+  return { intervals, diagnostics, availableLogicalFields, availableSourceFields };
 }
