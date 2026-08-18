@@ -7,6 +7,7 @@
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
     "test": "jest --watch --onlyChanged",
     "test:ci": "jest --passWithNoTests --maxWorkers 4",
+    "test:runtime": "playwright test tests/runtime-smoke.spec.ts --config playwright.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --cache .",
     "react:detect": "npx -y @grafana/react-detect@latest"
@@ -29,6 +30,7 @@
     "@grafana/eslint-config": "^9.0.0",
     "@grafana/plugin-e2e": "^3.10.0",
     "@grafana/tsconfig": "^2.2.0",
+    "@playwright/test": "1.62.1",
     "@swc/core": "^1.15.0",
     "@swc/jest": "^0.2.0",
     "@testing-library/jest-dom": "^6.6.0",
