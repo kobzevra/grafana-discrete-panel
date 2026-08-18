@@ -25,7 +25,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm run build
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
 
       - name: Start Grafana 13.1.1 with unsigned development plugin
         shell: bash
