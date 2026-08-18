@@ -1,5 +1,6 @@
 import { PanelPlugin } from '@grafana/data';
 import { ProductionTimelinePanel } from './components/ProductionTimelinePanel';
+import { ColorMappingsEditor, DurationRulesEditor, FiltersEditor } from './editors/MappingEditors';
 import type { ProductionTimelineOptions } from './types';
 import { DEFAULT_OPTIONS } from './domain/panelOptions';
 
@@ -14,13 +15,101 @@ const fields: Array<[keyof ProductionTimelineOptions['fields'], string, string]>
   ['details', 'Details', 'details'],
 ];
 
-const filters: Array<[keyof ProductionTimelineOptions['filters'], string]> = [
-  ['machine', 'Machine'], ['job', 'Job'], ['operator', 'Operator'], ['material', 'Material'], ['customer', 'Customer'],
-  ['manager', 'Manager'], ['color_profile', 'Color profile'], ['print_mode', 'Print mode'], ['drop_size', 'Drop size'],
-  ['tool', 'Tool'], ['preset', 'Preset'], ['commanded_speed', 'Commanded speed'],
-];
-
 export const plugin = new PanelPlugin<ProductionTimelineOptions>(ProductionTimelinePanel).setPanelOptions((builder) => {
+  builder
+    .addNumberInput({
+      path: 'rowHeight',
+      name: 'Row height',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.rowHeight,
+      settings: { min: 8, max: 80 },
+    })
+    .addBooleanSwitch({
+      path: 'showAxis',
+      name: 'Show time axis',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.showAxis,
+    })
+    .addBooleanSwitch({
+      path: 'interactions.dragPan',
+      name: 'Drag empty area to pan',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.interactions.dragPan,
+    })
+    .addBooleanSwitch({
+      path: 'interactions.segmentZoom',
+      name: 'Drag segment to select and zoom',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.interactions.segmentZoom,
+    })
+    .addBooleanSwitch({
+      path: 'interactions.wheelPan',
+      name: 'Mouse wheel pans time',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.interactions.wheelPan,
+    })
+    .addBooleanSwitch({
+      path: 'interactions.ctrlWheelZoom',
+      name: 'Ctrl + wheel zooms at cursor',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.interactions.ctrlWheelZoom,
+    })
+    .addBooleanSwitch({
+      path: 'interactions.shiftWheelPan',
+      name: 'Shift + wheel fast pan',
+      category: ['Display'],
+      defaultValue: DEFAULT_OPTIONS.interactions.shiftWheelPan,
+    })
+    .addBooleanSwitch({
+      path: 'showLegend',
+      name: 'Show legend',
+      category: ['Legend'],
+      defaultValue: DEFAULT_OPTIONS.showLegend,
+    })
+    .addRadio({
+      path: 'jobMode',
+      name: 'Job selection mode',
+      category: ['Filters'],
+      defaultValue: 'none',
+      settings: {
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'filter', label: 'Filter' },
+          { value: 'focus', label: 'Focus (Selected / Other jobs)' },
+        ],
+      },
+    });
+
+  builder.addCustomEditor({
+    id: 'filterRows',
+    path: 'filterRows',
+    name: 'Filter mappings',
+    description: 'AND between rows; multiple values inside one row are OR. Custom Grafana variables are accepted.',
+    category: ['Filters'],
+    defaultValue: DEFAULT_OPTIONS.filterRows,
+    editor: FiltersEditor,
+  });
+
+  builder.addCustomEditor({
+    id: 'durationRules',
+    path: 'durationRules',
+    name: 'Duration rules',
+    description: 'Filters by the original full interval duration, not the clipped visible duration.',
+    category: ['Duration filters'],
+    defaultValue: DEFAULT_OPTIONS.durationRules,
+    editor: DurationRulesEditor,
+  });
+
+  builder.addCustomEditor({
+    id: 'colorMappings',
+    path: 'colorMappings',
+    name: 'Color mappings',
+    description: 'Map a discovered field value to a color. Job colors remain deterministic unless explicitly overridden.',
+    category: ['Colors'],
+    defaultValue: DEFAULT_OPTIONS.colorMappings,
+    editor: ColorMappingsEditor,
+  });
+
   for (const [key, label, fallback] of fields) {
     builder.addTextInput({
       path: `fields.${key}`,
@@ -28,37 +117,6 @@ export const plugin = new PanelPlugin<ProductionTimelineOptions>(ProductionTimel
       category: ['Field mappings'],
       defaultValue: String(DEFAULT_OPTIONS.fields[key] ?? fallback),
     });
-  }
-
-  builder
-    .addNumberInput({ path: 'rowHeight', name: 'Row height', category: ['Layout'], defaultValue: DEFAULT_OPTIONS.rowHeight, settings: { min: 8, max: 80 } })
-    .addBooleanSwitch({ path: 'showAxis', name: 'Show time axis', category: ['Layout'], defaultValue: DEFAULT_OPTIONS.showAxis })
-    .addBooleanSwitch({ path: 'showLegend', name: 'Show legend', category: ['Layout'], defaultValue: DEFAULT_OPTIONS.showLegend })
-    .addRadio({
-      path: 'jobMode', name: 'Job selection mode', category: ['Filters'], defaultValue: 'none',
-      settings: { options: [
-        { value: 'none', label: 'None' }, { value: 'filter', label: 'Filter' }, { value: 'focus', label: 'Focus (Selected / Other jobs)' },
-      ] },
-    });
-
-  for (const [key, label] of filters) {
-    builder.addTextInput({
-      path: `filters.${key}`,
-      name: `${label} binding`,
-      description: 'Literal value or Grafana variable; JSON arrays are accepted for multi-select.',
-      category: ['Filters'],
-      defaultValue: '',
-    });
-  }
-
-  builder
-    .addNumberInput({ path: 'duration.idleMinSeconds', name: 'Idle minimum (s)', category: ['Duration filters'], settings: { min: 0 } })
-    .addNumberInput({ path: 'duration.idleMaxSeconds', name: 'Idle maximum (s)', category: ['Duration filters'], settings: { min: 0 } })
-    .addNumberInput({ path: 'duration.setupMinSeconds', name: 'Setup minimum (s)', category: ['Duration filters'], settings: { min: 0 } })
-    .addNumberInput({ path: 'duration.setupMaxSeconds', name: 'Setup maximum (s)', category: ['Duration filters'], settings: { min: 0 } });
-
-  for (const state of ['offline', 'idle', 'setup', 'ready', 'queued', 'running-unresolved', 'paused', 'blocked', 'error', 'maintenance', 'unknown', 'gap', 'stale']) {
-    builder.addColorPicker({ path: `stateColors.${state}`, name: state, category: ['State colors'] });
   }
 
   return builder;
