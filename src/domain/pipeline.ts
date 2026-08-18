@@ -71,11 +71,19 @@ export function buildTimelineModel(args: BuildTimelineModelArgs): TimelineModel 
     return {
       intervals: [],
       noData,
-      legend: buildLegend([], args.range, requestedMachines),
+      legend: buildLegend([], args.range, requestedMachines, args.focusJob),
       machineIds: requestedMachines,
       diagnostics,
       blocked: false,
     };
+  }
+
+  if (args.focusJob && (!args.mappings.job || !adapted.availableLogicalFields.has('job'))) {
+    diagnostics.push({
+      code: 'job-focus-field-absent',
+      severity: 'error',
+      message: 'Job focus requires an available mapped job field',
+    });
   }
 
   for (const [dimension] of activeFilters(args.dimensionFilters)) {
@@ -88,7 +96,12 @@ export function buildTimelineModel(args: BuildTimelineModelArgs): TimelineModel 
       });
     }
   }
-  if (diagnostics.some((diagnostic) => diagnostic.code === 'configured-filter-field-absent')) {
+  if (
+    diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === 'configured-filter-field-absent' || diagnostic.code === 'job-focus-field-absent'
+    )
+  ) {
     return { intervals: [], noData: [], legend: null, machineIds: [], diagnostics, blocked: true };
   }
 
@@ -116,7 +129,7 @@ export function buildTimelineModel(args: BuildTimelineModelArgs): TimelineModel 
   return {
     intervals: focused,
     noData,
-    legend: buildLegend(focused, args.range, machineIds),
+    legend: buildLegend(focused, args.range, machineIds, args.focusJob),
     machineIds,
     diagnostics,
     blocked: false,

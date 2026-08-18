@@ -13,7 +13,8 @@ interface Accumulator {
 export function buildLegend(
   rows: readonly DisplayInterval[],
   range: TimelineRange,
-  machineIds: readonly string[]
+  machineIds: readonly string[],
+  focusJob?: string
 ): LegendModel {
   const denominatorMs = Math.max(0, range.to - range.from) * machineIds.length;
   const map = new Map<string, Accumulator>();
@@ -53,6 +54,31 @@ export function buildLegend(
     runCount: acc.kind === 'state' || acc.hasMissingRunId ? null : acc.runIds.size,
   });
   const entries = [...map.values()].map(toEntry);
+
+  if (focusJob) {
+    if (!entries.some((entry) => entry.kind === 'selected-job')) {
+      entries.push({
+        key: `selected-job:${focusJob}`,
+        label: focusJob,
+        kind: 'selected-job',
+        visibleDurationMs: 0,
+        percent: 0,
+        segmentCount: 0,
+        runCount: 0,
+      });
+    }
+    if (!entries.some((entry) => entry.kind === 'other-jobs')) {
+      entries.push({
+        key: 'other-jobs:Other jobs',
+        label: 'Other jobs',
+        kind: 'other-jobs',
+        visibleDurationMs: 0,
+        percent: 0,
+        segmentCount: 0,
+        runCount: 0,
+      });
+    }
+  }
 
   return {
     states: entries
