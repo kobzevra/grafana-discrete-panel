@@ -1,7 +1,7 @@
 # Production Timeline Panel for Grafana 13.1.1 — Design
 
 **Date:** 2026-08-18  
-**Status:** approved design captured before implementation  
+**Status:** chat design approved; written spec pending user review  
 **Repository:** `kobzevra/grafana-discrete-panel`  
 **Target branch:** `rewrite/grafana-13-production-timeline`
 
@@ -9,7 +9,7 @@
 
 Rewrite the legacy Natel Discrete panel fork as a modern, vendor-neutral Grafana panel plugin for the production monitoring project.
 
-The new panel must preserve the useful UX of the historical Discrete panel — horizontal state regions, stable colors, hover details, transition visibility, range-aware statistics — while implementing the stricter `PRODUCTION_TIMELINE_PANEL_REQUIREMENTS_v1.0.md` contract:
+The new panel preserves the useful UX of the historical Discrete panel — horizontal state regions, stable colors, hover details, transition visibility, and range-aware statistics — while implementing the stricter `PRODUCTION_TIMELINE_PANEL_REQUIREMENTS_v1.0.md` contract:
 
 - jobs and machine states on the same timeline;
 - exact `[from,to)` overlap and clipping semantics;
@@ -17,9 +17,9 @@ The new panel must preserve the useful UX of the historical Discrete panel — h
 - original-duration filters;
 - deterministic job colors;
 - selected-job / Other-jobs focus mode;
-- multiple machine rows on a shared time axis;
+- multiple machine rows on one shared time axis;
 - common and machine-specific production dimensions;
-- explicit handling of unresolved, stale, gap, and no-data conditions;
+- explicit unresolved, stale, gap, and no-data handling;
 - normalized DataFrame input with no vendor-specific parsing in the renderer.
 
 This is a full React rewrite, not an incremental Angular migration.
@@ -28,15 +28,15 @@ This is a full React rewrite, not an incremental Angular migration.
 
 The first production target is **Grafana OSS 13.1.1**.
 
-Initial metadata will declare:
+Initial plugin metadata will declare:
 
 ```text
 grafanaDependency >=13.1.1
 ```
 
-The implementation will use current Grafana plugin APIs and package versions compatible with Grafana 13.1.1. Compatibility with older Grafana releases is not a goal of the first version and must not be claimed without separate tests.
+Compatibility with older Grafana releases is not a first-version goal and must not be claimed without separate tests.
 
-The plugin must not depend on:
+The new plugin must not depend on:
 
 - Angular panel APIs;
 - `PanelCtrl` / `CanvasPanelCtrl`;
@@ -45,27 +45,27 @@ The plugin must not depend on:
 - Moment.js;
 - deprecated `@grafana/toolkit` build flow.
 
-The plugin will use React, `PanelPlugin`, public `@grafana/*` APIs, TypeScript, and modern Grafana plugin tooling.
+It will use React, `PanelPlugin`, public `@grafana/*` APIs, TypeScript, and current Grafana plugin tooling.
 
 ## 3. Plugin identity and migration policy
 
-The new plugin identity is:
+New identity:
 
 ```text
 id:   kobzevra-production-timeline-panel
 name: Production Timeline
 ```
 
-The legacy `natel-discrete-panel` ID will not be retained. This avoids implying dashboard-level backward compatibility with the old Angular plugin and creates a clean namespace suitable for private signing.
+The legacy `natel-discrete-panel` ID is not retained. The rewrite does not claim dashboard-level backward compatibility with the old Angular plugin.
 
 Consequences:
 
 - existing dashboards using `natel-discrete-panel` are not migrated automatically;
-- users add the new panel explicitly;
+- the new panel is added explicitly;
 - old source remains available through Git history;
-- MIT license and attribution from the original Natel Discrete project remain in the repository and derivative source notices where required.
+- MIT license and attribution from the original Natel Discrete project remain in the repository and derivative notices where required.
 
-## 4. High-level architecture
+## 4. Architecture
 
 ```text
 Grafana PanelPlugin
@@ -78,7 +78,7 @@ ProductionTimelinePanel.tsx
         |      v
         |   normalized intervals
         |
-        +--> interval validation
+        +--> validation / deduplication
         +--> overlap selection + clipping
         +--> source coverage model
         +--> dimension filters
@@ -92,13 +92,9 @@ ProductionTimelinePanel.tsx
         +--> React legend
 ```
 
-The domain transformations are pure TypeScript functions. React is responsible for Grafana integration, options, sizing, mouse interaction, and rendering orchestration. Canvas is responsible only for timeline geometry and hit regions; legend and tooltip are normal React UI.
+Correctness-critical transformations are pure TypeScript functions. React handles Grafana integration, options, sizing, interaction, and orchestration. Canvas draws geometry only. Tooltip and legend remain React UI.
 
-This separation allows the correctness-critical interval engine to be tested independently from drawing code.
-
-## 5. Planned source boundaries
-
-The implementation should converge on focused modules with responsibilities equivalent to:
+Planned boundaries are equivalent to:
 
 ```text
 src/module.ts
@@ -117,15 +113,13 @@ src/domain/legend.ts
 src/domain/hitTest.ts
 ```
 
-Exact filenames may change during implementation if the same boundaries remain clear.
+Exact filenames may change if the same responsibilities remain isolated.
 
-No module should mix vendor parsing with visualization semantics.
+## 5. Input contract
 
-## 6. Input contract
+The panel consumes one or more Grafana DataFrames and maps rows into one logical interval model.
 
-The panel consumes one or more Grafana DataFrames and maps them into one logical interval model.
-
-### 6.1 Required logical fields
+### Required logical fields
 
 ```text
 machine_id
@@ -134,9 +128,9 @@ started_at
 ended_at
 ```
 
-`ended_at` may be null for a current/open interval.
+`ended_at` is required as a mapped logical field but its row value may be null for a current/open interval.
 
-### 6.2 Optional logical fields
+### Optional logical fields
 
 ```text
 machine_type
@@ -158,24 +152,23 @@ quality
 details
 ```
 
-The panel must not assume that the future schema registry uses these exact physical column names. Panel options therefore map logical fields to actual DataFrame fields.
+Physical field names are configurable. The panel does not assume that the future schema registry uses these exact column names.
 
-### 6.3 Time fields
+Preferred timestamps are Grafana fields of time type. ISO-8601 strings may also be selected explicitly. Numeric non-time fields are not guessed to be seconds or milliseconds. Internal time is epoch milliseconds.
 
-Preferred input is a Grafana field of time type. ISO-8601 string fields may also be selected explicitly. Numeric non-time fields are not heuristically interpreted as seconds or milliseconds.
+For a closed interval, `original_duration` is used when mapped and valid; otherwise it is derived as `ended_at - started_at`.
 
-Internal interval time is represented as epoch milliseconds.
+For an open interval without explicit duration, elapsed duration at evaluation time is used as duration-so-far and is never presented as final completed duration.
 
-### 6.4 Original duration
+### `display_class` precedence
 
-For a closed interval:
+`display_class` is an optional normalized hint, not an unrestricted visual override.
 
-- use a mapped `original_duration` value when present and valid;
-- otherwise derive `ended_at - started_at`.
+Reserved explicit quality/state classes such as `gap`, `stale`, `unknown`, and `offline` take precedence when supplied by the read-model. Otherwise job/state classification is derived from normalized `state` and `job` so an arbitrary input string cannot turn a non-running state into a job or hide an unresolved running interval.
 
-For an open interval with no explicit duration, the panel uses elapsed duration at evaluation time as the current duration-so-far. It is not presented as a final completed duration.
+The resolved internal `displayClass` is what downstream filters, legend logic, and renderer consume.
 
-## 7. Interval semantics
+## 6. Interval semantics
 
 Dashboard range is half-open:
 
@@ -183,7 +176,7 @@ Dashboard range is half-open:
 [from,to)
 ```
 
-A closed interval overlaps the range when:
+A closed interval overlaps when:
 
 ```text
 started_at < to && ended_at > from
@@ -196,59 +189,61 @@ visible_start = max(started_at, from)
 visible_end   = min(ended_at, to)
 ```
 
-For an open interval:
+For an open interval, the effective end is the earlier of dashboard `to` and current time. Historical ranges therefore clip at `to`; future-ending ranges never draw an open interval beyond `now`.
 
-```text
-effective_end = min(to, now)
-```
+Intervals with no positive visible duration are not rendered and contribute nothing to the legend. Original boundaries and original/current duration remain available for tooltip and duration filtering.
 
-when `to` lies in the future, otherwise `effective_end = to`.
+## 7. Query/read-model responsibility
 
-An interval with no positive visible duration is not rendered and contributes nothing to the legend.
+The panel can clip intervals it receives; it cannot recover intervals omitted by the datasource query.
 
-Original boundaries and original duration remain available for tooltip and duration filtering.
+The production query/read-model must return all intervals overlapping the dashboard range and enough carry-in information to establish state at the left boundary.
 
-## 8. Query/read-model responsibility
+Historical geometry is interval-first. The panel does not rebuild long historical states from second-by-second points.
 
-The panel can clip intervals that it receives; it cannot recover intervals omitted by the datasource query.
+## 8. Validation and deduplication
 
-The production query/read-model must therefore return all intervals that overlap the dashboard range and must provide enough carry-in information for current state at the left boundary.
-
-The panel will not recreate long historical states from second-by-second points. Historical geometry is interval-first.
-
-## 9. Validation and correctness policy
-
-Accuracy of duration totals is more important than rendering malformed data silently.
+Accuracy of duration totals is more important than silently rendering malformed data.
 
 Validation rules:
 
-- missing required mapped field -> panel configuration error;
+- missing required mapping -> configuration error;
 - missing `machine_id` or `started_at` -> invalid row;
 - invalid timestamp -> invalid row;
 - closed `ended_at <= started_at` -> invalid row;
-- exact duplicate intervals may be deduplicated deterministically;
-- conflicting overlapping non-identical intervals for the same machine are a correctness error.
+- conflicting overlapping non-identical intervals for the same machine -> correctness error.
 
-If conflicting overlaps would make duration aggregation ambiguous, the panel must show an explicit error/warning state and must not present a misleading exact legend total.
+An **exact duplicate** means two normalized rows have the same values for:
 
-Unknown source state values are retained in tooltip details but rendered through the explicit `unknown` class unless the normalized read-model supplies a recognized class.
+```text
+machine_id
+started_at
+ended_at/open marker
+state
+job
+run_id
+all mapped filter dimensions
+quality/display-class inputs
+```
 
-## 10. Display classes
+Exact duplicates are deterministically collapsed to one interval before duration aggregation. Rows that overlap in time but differ in any of those identity/semantic values are not treated as duplicates.
 
-The visual model separates jobs from non-running machine states.
+If conflicting overlaps make duration aggregation ambiguous, the panel must visibly report the problem and must not present a misleading exact legend total.
+
+Unknown state values remain available in tooltip details and resolve to `unknown` unless the normalized read-model supplies a recognized explicit class.
+
+## 9. Display classes
 
 Default mapping:
 
 ```text
 running + resolved job     -> job class
-running + no resolved job  -> running-unresolved state class
-non-running interval       -> normalized machine state class
-explicit gap/stale/unknown -> corresponding fixed state class
+running + no resolved job  -> running-unresolved
+non-running interval       -> normalized state class
+explicit gap/stale/unknown -> corresponding fixed class
 ```
 
-The panel does not infer Idle from missing telemetry.
-
-Recognized fixed state classes initially include, where present in normalized data:
+Recognized fixed classes initially include, when present in normalized data:
 
 ```text
 offline
@@ -266,53 +261,45 @@ gap
 stale
 ```
 
-No source is required to provide every class.
+The panel never infers Idle from missing telemetry and does not invent states absent from the source/read-model.
 
-## 11. No-data and filtered-out regions
+## 10. No-data and filtered-out regions
 
-The renderer must not confuse source gaps with intervals removed by user filters.
+Before dimension filtering, source coverage is computed per machine from valid normalized intervals. Uncovered portions of the dashboard range are source **no-data** regions.
 
-Before dimension filtering, the engine computes source coverage per machine from valid normalized intervals. Uncovered portions of the dashboard range are source **no-data** regions.
+After filters:
 
-After filters are applied:
+- true pre-filter uncovered regions remain identifiable as no-data;
+- intervals removed by a user dimension filter are filtered-out, not reclassified as Idle or no-data;
+- explicit `gap`, `unknown`, `offline`, and `stale` intervals keep their own semantics.
 
-- true pre-filter uncovered regions remain identifiable as `no data`;
-- intervals removed by a dimension filter are `filtered out`, not reclassified as Idle or no-data;
-- explicit `gap`, `unknown`, `offline`, and `stale` intervals retain their own state semantics.
+The initial UI may render filtered-out regions as plain background, but they do not contribute to a no-data legend category.
 
-The initial UI may represent filtered-out regions as plain background, but they must not contribute to a no-data legend category.
+## 11. Colors
 
-## 12. Colors
+Machine states use fixed default colors keyed by normalized state. State-color overrides are panel options and do not change state identity.
 
-### 12.1 Machine states
+Job colors are deterministic and independent of query order, segment number, machine row, or dashboard reload.
 
-Machine states use fixed default colors keyed by normalized state. The option model permits state-color overrides without changing state identity.
+Algorithm:
 
-### 12.2 Jobs
-
-Job colors are deterministic and independent of query order, segment number, reload order, or machine row.
-
-The algorithm is:
-
-1. take the canonical/mapped job key as supplied by the normalized read-model;
+1. use the canonical/mapped job key supplied by the read-model;
 2. trim surrounding whitespace;
-3. hash the resulting UTF-8 key with a stable versioned hash function;
+3. hash its UTF-8 bytes with a stable versioned hash;
 4. map the hash to a fixed curated job palette.
 
-The palette and hash version are part of panel behavior so reloads do not reshuffle colors.
+The renderer does not lower-case or otherwise reinterpret job identity. Canonical job normalization belongs upstream when needed.
 
-The renderer will not lower-case or otherwise reinterpret job identity; canonical job normalization belongs upstream when required.
+## 12. Job filtering and focus
 
-## 13. Job focus
-
-Job selection has two distinct modes:
+Job selection has two modes:
 
 ```text
-filter  -> remove jobs that do not match
-focus   -> keep full production context
+filter -> remove jobs that do not match
+focus  -> preserve full production context
 ```
 
-Focus mode implements the required behavior:
+Focus mode:
 
 ```text
 running + selected job -> Selected job
@@ -320,15 +307,13 @@ running + other job    -> Other jobs
 non-running states     -> unchanged
 ```
 
-Machine states do not disappear in focus mode.
+Machine states never disappear merely because job focus is active.
 
-The focus value can be bound to a Grafana dashboard variable through panel options. If interpolation resolves to zero or multiple selected jobs, focus mode does not guess a single target; it remains inactive and reports the reason in panel diagnostics.
+The focus value may be bound to a Grafana dashboard variable. If interpolation resolves to zero or multiple selected jobs, the panel does not guess one target: focus remains inactive and diagnostics explain why.
 
-## 14. Dimension filters
+## 13. Dimension filters
 
-The panel supports local filtering against mapped logical dimensions so the visualization contract does not depend on whether a backend stores a dimension as a tag, field, or external index.
-
-Supported dimensions:
+Local filtering is supported for:
 
 ```text
 machine
@@ -345,26 +330,24 @@ preset
 commanded_speed
 ```
 
-Filter option values may contain Grafana variable expressions. After `replaceVariables`, the panel accepts a single value or a JSON-array representation for multi-select values.
+Filter options may contain Grafana variable expressions. After `replaceVariables`, a binding accepts either one scalar value or a JSON-array representation for multi-select values.
 
-Empty filter binding means no local restriction.
+Empty binding means no local restriction. If an active configured filter refers to an absent mapped field, the panel shows a configuration diagnostic instead of silently matching everything.
 
-Missing optional fields do not create fabricated data. A configured active filter that references an absent mapped field produces a visible configuration diagnostic instead of silently matching everything.
+Job focus is evaluated after normal dimension filters.
 
-Job focus is evaluated after normal dimension filtering.
+## 14. Duration filters
 
-## 15. Duration filters
-
-Initial panel options expose min/max original-duration filters for:
+Initial options expose min/max original-duration filters for:
 
 ```text
 idle
 setup
 ```
 
-The domain model represents duration rules generically so other classes can be added later without changing interval semantics.
+The domain representation is generic so more state classes can be added later without changing interval semantics.
 
-A duration rule always tests original/current duration before clipping. Legend contribution always uses visible clipped duration.
+Rules are tested against full original duration before clipping. Legend contribution always uses visible clipped duration.
 
 Example:
 
@@ -374,17 +357,15 @@ visible Idle  = 5m
 min Idle      = 30m
 ```
 
-Result: interval remains visible and contributes only 5m to legend totals.
+The interval remains visible and contributes only 5m to legend totals.
 
-For an open interval, a min/max rule uses elapsed duration-so-far at evaluation time and the tooltip marks the duration as current rather than final.
+For an open interval, min/max uses elapsed duration-so-far at evaluation time and the UI marks that duration as current, not final.
 
-## 16. Legend semantics
+## 15. Legend semantics
 
-Legend data is produced by the same transformed interval set that drives the Canvas renderer. There is no separate renderer-side duration calculation.
+The legend is calculated from the same transformed interval set used by the renderer. Canvas has no independent duration logic.
 
-### 16.1 States
-
-Each state shows at minimum:
+State entries contain at minimum:
 
 ```text
 state
@@ -393,65 +374,57 @@ percentage
 segment count
 ```
 
-### 16.2 Jobs
-
-Each job shows at minimum:
+Job entries contain at minimum:
 
 ```text
 job
 visible duration
-run count when run_id is available
+run count when run_id is reliable
 segment count
 ```
 
-Run count is the count of distinct non-empty `run_id` values. If no reliable run ID exists, the UI reports run count as unavailable; it does not equate segment count with run count.
+Run count is the number of distinct non-empty `run_id` values. If reliable run IDs are absent, run count is shown as unavailable; segment count is not substituted.
 
-### 16.3 Focus legend
-
-Focus mode explicitly contains:
+Focus mode explicitly shows:
 
 ```text
 Selected job: visible duration
 Other jobs:   visible duration
 ```
 
-with state totals alongside them.
+with machine state totals alongside them.
 
-### 16.4 Multiple machines
-
-The default aggregate percentage denominator is total visible machine capacity:
+For multiple machines, the default aggregate percentage denominator is:
 
 ```text
 range duration * number of visible machine rows
 ```
 
-This keeps state percentages meaningful when several rows share one time axis. The engine also keeps per-machine totals so future per-row legend layouts do not require semantic changes.
+The engine also retains per-machine totals. Because filtered-out time is not relabeled as another state, displayed state percentages may sum to less than 100% when filters remove intervals or source no-data exists.
 
-Filtered-out machine time does not get relabeled as another state. Therefore displayed percentages may sum to less than 100% when active filters intentionally remove intervals or source coverage contains no-data.
+## 16. Canvas renderer
 
-## 17. Canvas renderer
-
-Canvas 2D is the primary geometry renderer because the panel may contain many interval rectangles and labels.
+Canvas 2D is the primary geometry renderer.
 
 Requirements:
 
 - one horizontal row per machine;
 - one shared time scale;
 - device-pixel-ratio-aware drawing;
-- stable row ordering;
-- segment rectangles clipped to the plot bounds;
+- deterministic row ordering;
+- plot-bound clipping;
 - no merging across intervening states;
-- optional labels only when sufficient pixel width exists;
-- explicit visual treatment for state classes, jobs, no-data background, and selection/focus;
-- time ticks use Grafana time-zone-aware formatting.
+- labels only when sufficient pixel width exists;
+- distinct treatment for states, jobs, no-data, and focus selection;
+- Grafana time-zone-aware tick formatting.
 
-The renderer must not perform data aggregation. It receives already transformed render segments.
+The renderer receives transformed render segments and does no aggregation.
 
-## 18. Hit testing and tooltip
+## 17. Hit testing and tooltip
 
-Hit testing is indexed per machine row and sorted by visible start time. Pointer movement must not scan every interval in the panel.
+Hit testing is indexed by machine row and visible start time. Pointer movement must not linearly scan every interval in the panel.
 
-Tooltip for a segment contains at minimum:
+Tooltip minimum:
 
 ```text
 machine
@@ -463,35 +436,25 @@ visible end
 visible duration
 ```
 
-When clipping occurred, it additionally exposes:
+When clipping occurred it also shows original start/end and original/current duration. Optional mapped dimensions appear only when present. Open intervals are explicitly marked current.
 
-```text
-original start
-original end
-original/current duration
-```
+## 18. Panel options
 
-Mapped optional dimensions are shown only when present.
-
-For an open interval, the tooltip indicates that the end/duration is current as of evaluation time.
-
-## 19. Panel options
-
-The first version includes option groups for:
+First-version option groups:
 
 1. logical field mappings;
-2. layout: row height, axis visibility, legend visibility;
+2. row height, time-axis visibility, legend visibility;
 3. state color overrides;
-4. job focus/filter binding;
+4. job filter/focus mode and binding;
 5. common dimension filter bindings;
 6. printer/cutter dimension filter bindings;
 7. Idle and Setup min/max duration rules.
 
-The panel does not contain vendor-specific option names beyond the normalized printer/cutter dimensions already present in the project contract.
+The option model remains vendor-neutral beyond normalized dimensions already required by the project contract.
 
-## 20. Error handling and diagnostics
+## 19. Diagnostics
 
-Configuration and data errors are visible in the panel rather than only in the browser console.
+Configuration and data problems are visible inside the panel rather than only in browser console output.
 
 Diagnostics distinguish at least:
 
@@ -506,28 +469,30 @@ no rows after filters
 no source data in range
 ```
 
-A panel with no rows after legitimate filters is not treated as a plugin crash.
+A legitimate empty result after filters is not treated as a plugin crash.
 
-## 21. Performance model
+## 20. Performance model
 
-The design avoids algorithmic behavior that scales with pixels or performs full-data scans on every mouse move.
+The design avoids pixel-dependent data work and full scans on every pointer move.
 
 Expected complexity:
 
-- DataFrame normalization: O(n);
-- grouping/sorting: O(n log n);
-- overlap/filter/display transforms: O(n);
-- legend aggregation: O(n);
-- Canvas draw: O(n) visible segments;
-- hit test: O(log n) within a machine row after row lookup.
+```text
+DataFrame normalization       O(n)
+grouping/sorting              O(n log n)
+interval/filter transforms    O(n)
+legend aggregation            O(n)
+Canvas drawing                O(n visible segments)
+hit test                      O(log n within a row)
+```
 
-No dependency on ECharts, Plotly, Vega, or HTML Graphics is introduced.
+No ECharts, Plotly, Vega, or HTML Graphics dependency is introduced.
 
-## 22. Testing strategy
+## 21. Testing strategy
 
-Correctness-critical logic is developed test-first as pure domain code.
+Correctness-bearing domain logic is implemented test-first.
 
-The mandatory project scenarios T01-T14 from `PRODUCTION_TIMELINE_PANEL_REQUIREMENTS_v1.0.md` become executable fixtures, including:
+The project scenarios T01-T14 become executable fixtures:
 
 ```text
 T01 range starts inside job
@@ -558,9 +523,9 @@ Additional tests cover:
 - ambiguous multi-value job focus;
 - filtered-out regions not becoming no-data.
 
-## 23. Build and compatibility acceptance
+## 22. Build and compatibility acceptance
 
-Before the branch is considered implementation-complete, it must pass the checks supported by the modern Grafana plugin toolchain, including equivalents of:
+Before implementation is considered complete, the branch must pass the checks supported by the modern Grafana plugin toolchain, including equivalents of:
 
 ```text
 unit tests
@@ -571,34 +536,31 @@ Grafana plugin API compatibility scan
 React compatibility scan
 ```
 
-A runtime smoke test must target Grafana 13.1.1 and include at least:
+Runtime smoke testing targets Grafana 13.1.1 and includes:
 
 - plugin loads;
 - static fixture renders;
 - multiple machine rows render;
-- dashboard range clipping fixture renders correctly;
+- boundary-clipping fixture renders correctly;
 - reload preserves deterministic colors and legend values;
-- no browser runtime exception during normal interactions.
+- normal interaction produces no browser runtime exception.
 
-If the execution environment cannot run the Grafana 13.1.1 runtime itself, that limitation must be reported explicitly rather than replacing the runtime acceptance with a build-only claim.
+If the execution environment cannot run Grafana 13.1.1 itself, that limitation must be reported explicitly instead of replacing runtime acceptance with a build-only claim.
 
-## 24. Explicit non-goals
+## 23. Non-goals
 
 The rewrite does not implement:
 
 - interval editing;
 - click-to-modify production facts;
-- Gantt planning;
-- dependency arrows;
+- Gantt planning or dependency arrows;
 - future job scheduling;
 - machine control;
 - vendor source parsing;
-- reconstruction of historical intervals from raw one-second points;
+- historical interval reconstruction from raw one-second points;
 - automatic migration of old `natel-discrete-panel` dashboard JSON.
 
-## 25. Implementation order
-
-Implementation should proceed in dependency order:
+## 24. Implementation order
 
 ```text
 modern Grafana 13 plugin skeleton
@@ -618,9 +580,9 @@ modern Grafana 13 plugin skeleton
 
 TDD applies to each correctness-bearing domain step before renderer integration.
 
-## 26. Acceptance definition
+## 25. Acceptance definition
 
-The rewrite is ready for production pilot only when all of the following are simultaneously true:
+The rewrite is ready for production pilot only when all are true:
 
 ```text
 Grafana 13.1.1 plugin loads
@@ -646,4 +608,4 @@ Grafana core is not patched
 legacy Angular/runtime dependencies are removed
 ```
 
-This acceptance contract is intentionally stricter than simply rendering colored bars.
+This acceptance contract is intentionally stricter than merely rendering colored bars.
