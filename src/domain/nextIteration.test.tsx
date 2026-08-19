@@ -64,12 +64,13 @@ test('layout exposes compact content height based on rows plus axis', () => {
   expect(layout.contentHeight).toBe(52);
 });
 
-test('timeline source implements drag pan, segment selection and wheel navigation', () => {
+test('timeline source implements drag pan, segment selection and robust native wheel navigation', () => {
   const source = fs.readFileSync(path.resolve(process.cwd(), 'src/components/TimelineCanvas.tsx'), 'utf8');
   expect(source).toContain('onChangeTimeRange');
   expect(source).toContain('onPointerDown');
   expect(source).toContain('onPointerUp');
-  expect(source).toContain('onWheel');
+  expect(source).toContain("addEventListener('wheel'");
+  expect(source).toContain('passive: false');
   expect(source).toContain('ctrlKey');
   expect(source).toContain('shiftKey');
 });
