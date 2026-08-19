@@ -92,6 +92,56 @@ export const TimelineCanvas: React.FC<Props> = ({
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas || !onChangeTimeRange) {
+      return undefined;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (scale.width <= 0) {
+        return;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      if (x < layout.plotLeft || x > layout.plotRight) {
+        return;
+      }
+      const duration = range.to - range.from;
+      if (duration <= 0) {
+        return;
+      }
+
+      if (event.ctrlKey) {
+        if (!interactions.ctrlWheelZoom) {
+          return;
+        }
+        event.preventDefault();
+        setHover(null);
+        const cursorTime = scale.xToTime(x);
+        const anchor = (cursorTime - range.from) / duration;
+        const factor = Math.exp(event.deltaY * 0.002);
+        const newDuration = clamp(duration * factor, 1000, 10 * 365 * 24 * 60 * 60 * 1000);
+        const from = cursorTime - anchor * newDuration;
+        onChangeTimeRange({ from, to: from + newDuration });
+        return;
+      }
+
+      if (!interactions.wheelPan) {
+        return;
+      }
+      event.preventDefault();
+      setHover(null);
+      const rawDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      const multiplier = event.shiftKey && interactions.shiftWheelPan ? 3 : 1;
+      const deltaMs = (rawDelta * multiplier * duration) / Math.max(200, scale.width);
+      onChangeTimeRange({ from: range.from + deltaMs, to: range.to + deltaMs });
+    };
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, [interactions, layout.plotLeft, layout.plotRight, onChangeTimeRange, range, scale]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
     if (!canvas) {
       return;
     }
@@ -202,7 +252,7 @@ export const TimelineCanvas: React.FC<Props> = ({
     width,
   ]);
 
-  const pointForEvent = (event: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>) => {
+  const pointForEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
@@ -289,40 +339,6 @@ export const TimelineCanvas: React.FC<Props> = ({
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => finishDrag(event);
   const onPointerCancel = (event: React.PointerEvent<HTMLCanvasElement>) => finishDrag(event, true);
 
-  const onWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!onChangeTimeRange || scale.width <= 0) {
-      return;
-    }
-    const { x } = pointForEvent(event);
-    if (x < layout.plotLeft || x > layout.plotRight) {
-      return;
-    }
-    const duration = range.to - range.from;
-    if (duration <= 0) {
-      return;
-    }
-    event.preventDefault();
-    setHover(null);
-
-    if (event.ctrlKey && interactions.ctrlWheelZoom) {
-      const cursorTime = scale.xToTime(x);
-      const anchor = (cursorTime - range.from) / duration;
-      const factor = Math.exp(event.deltaY * 0.002);
-      const newDuration = clamp(duration * factor, 1000, 10 * 365 * 24 * 60 * 60 * 1000);
-      const from = cursorTime - anchor * newDuration;
-      onChangeTimeRange({ from, to: from + newDuration });
-      return;
-    }
-
-    if (!interactions.wheelPan) {
-      return;
-    }
-    const rawDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    const multiplier = event.shiftKey && interactions.shiftWheelPan ? 3 : 1;
-    const deltaMs = (rawDelta * multiplier * duration) / Math.max(200, scale.width);
-    onChangeTimeRange({ from: range.from + deltaMs, to: range.to + deltaMs });
-  };
-
   return (
     <div style={{ position: 'relative', width, height }}>
       <canvas
@@ -338,7 +354,6 @@ export const TimelineCanvas: React.FC<Props> = ({
             setHover(null);
           }
         }}
-        onWheel={onWheel}
         style={{ touchAction: 'none', cursor: 'default' }}
       />
       {hover ? <TimelineTooltip interval={hover.interval} x={hover.x} y={hover.y} timeZone={timeZone} /> : null}
