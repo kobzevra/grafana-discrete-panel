@@ -57,25 +57,62 @@ The datasource/read model is responsible for returning overlapping intervals and
 
 ## Duration rules
 
-Idle and Setup min/max filters use the **original interval duration**, before range clipping. Legend totals use **visible clipped duration** only.
+Duration filters are configured as dynamic rows:
 
-Example: a 40 minute Idle interval with only 5 minutes visible passes `Idle minimum = 30 minutes`, but adds only 5 minutes to the visible legend.
+```text
+State | Minimum (s) | Maximum (s)
+```
+
+The state selector is populated from state values actually present in the current DataFrame, and additional rows can be added or removed. This allows rules for `gap`, `idle`, `setup`, or any other normalized state without reclassifying one state as another.
+
+Duration filters use the **original full interval duration**, before range clipping. Legend totals use **visible clipped duration** only.
+
+Example: a 40 minute Idle interval with only 5 minutes visible passes a 30 minute minimum rule, but adds only 5 minutes to the visible legend.
+
+## Dynamic filters
+
+Filters are configured as rows:
+
+```text
+Field | Value(s)
+```
+
+The field selector is populated from the fields discovered in the current DataFrame. The value selector is populated from values discovered for the selected field and supports multiple values.
+
+- multiple values within one row are OR;
+- multiple filter rows are AND;
+- custom values and Grafana variable expressions are accepted;
+- rows can be added or removed;
+- the editor initially presents up to four useful field suggestions from the current data.
+
+The dynamic model allows printer-, cutter-, workflow-, and common production dimensions to use the same panel without a hardcoded per-machine filter form.
 
 ## Job focus
 
 Job selection modes:
 
 - `None`: no job restriction.
-- `Filter`: only matching jobs survive the job dimension filter.
-- `Focus`: the selected job becomes `Selected job`, all other running jobs become `Other jobs`, and non-running machine states remain visible.
+- `Filter`: matching job rows are handled by the configured filter mapping.
+- `Focus`: one selected job becomes `Selected job`, all other running jobs become `Other jobs`, and non-running machine states remain visible.
 
-A focus binding must resolve to exactly one job and requires an available mapped job field. A multi-value selection is not guessed; the panel shows a diagnostic instead. Focus legend keeps explicit Selected-job and Other-jobs entries even when one visible duration is zero.
+A focus selection must resolve to exactly one job and requires an available mapped job field. A multi-value selection is not guessed; the panel shows a diagnostic instead. Focus legend keeps explicit Selected-job and Other-jobs entries even when one visible duration is zero.
 
-Filter bindings can be literal values or Grafana variable expressions. For dashboard multi-select variables, use a JSON-formatted expansion such as `${variable:json}` so the panel receives an unambiguous array.
+## Time interaction
+
+The timeline changes the normal Grafana dashboard time range rather than maintaining a private local viewport:
+
+- drag empty timeline space or the time axis to pan left/right;
+- drag on a colored segment to select a range; releasing zooms the dashboard to that range;
+- mouse wheel pans in time;
+- `Ctrl + wheel` zooms around the timestamp under the cursor;
+- `Shift + wheel` performs faster panning;
+- horizontal wheel/touchpad delta is accepted for panning.
+
+Very short pointer drags are ignored to avoid accidental zooms. Tooltip hover is suppressed while a time interaction is active.
 
 ## Legend
 
-The legend is calculated from the exact same transformed intervals that are passed to Canvas.
+The legend is calculated from the exact same transformed intervals that are passed to Canvas. The timeline area uses only the height required by its machine rows and optional axis, so the legend starts immediately below it instead of being pushed to the bottom of a tall panel.
 
 States report visible duration, percentage, and segment count. Jobs report visible duration, segment count, and distinct `run_id` count when reliable run IDs are available. In multi-machine mode the percentage denominator is selected range duration multiplied by the number of visible machine rows.
 
@@ -87,7 +124,19 @@ It distinguishes normalized machine states, running without a resolved job, expl
 
 ## Colors
 
-Machine states use fixed stable defaults with optional overrides. Jobs use a stable versioned hash of the normalized job key into a fixed palette, so the same job keeps the same color across interruptions and dashboard reloads.
+Jobs use a stable versioned hash of the normalized job key into a fixed palette, so the same job keeps the same color across interruptions and dashboard reloads.
+
+Explicit color overrides are configured in a separate **Color mappings** modal:
+
+```text
+Field | Value | Color
+```
+
+Both field and value selectors are populated from the current DataFrame. A complete matching mapping overrides the default state/job color. The editor presents four initial mapping rows and supports adding or removing rows. `running` is not automatically mapped by default, preserving deterministic per-job colors unless the user explicitly overrides it.
+
+## Options layout
+
+The option editor follows Grafana 13 native controls while retaining the organization of the historical Discrete panel where it still fits: Display, Legend, Filters, Duration filters, Colors, and Field mappings. A later visual pass can modernize styling without changing these option semantics.
 
 ## Development
 
