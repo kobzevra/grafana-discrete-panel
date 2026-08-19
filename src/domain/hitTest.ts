@@ -1,0 +1,36 @@
+import type { DisplayInterval, HitIndex } from '../types.ts';
+
+export function buildHitIndex(rows: readonly DisplayInterval[]): HitIndex {
+  const index: HitIndex = new Map();
+  for (const row of rows) {
+    const group = index.get(row.machineId) ?? [];
+    group.push(row);
+    index.set(row.machineId, group);
+  }
+  for (const group of index.values()) {
+    group.sort((a, b) => a.visibleStart - b.visibleStart || a.visibleEnd - b.visibleEnd);
+  }
+  return index;
+}
+
+export function hitTest(index: HitIndex, machineId: string, timeMs: number): DisplayInterval | null {
+  const rows = index.get(machineId);
+  if (!rows?.length) {
+    return null;
+  }
+
+  let low = 0;
+  let high = rows.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const row = rows[mid];
+    if (timeMs < row.visibleStart) {
+      high = mid - 1;
+    } else if (timeMs >= row.visibleEnd) {
+      low = mid + 1;
+    } else {
+      return row;
+    }
+  }
+  return null;
+}

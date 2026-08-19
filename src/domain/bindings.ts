@@ -1,0 +1,43 @@
+import type { DimensionFilters, DimensionKey } from '../types.ts';
+
+export type FilterBindings = Partial<Record<DimensionKey, string>>;
+
+export function parseFilterBinding(value: string): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry).trim()).filter(Boolean);
+      }
+    } catch {
+      // Treat malformed array-looking input as one literal value.
+    }
+  }
+
+  return [trimmed];
+}
+
+export function resolveFilterBindings(
+  bindings: FilterBindings,
+  interpolate: (value: string) => string
+): DimensionFilters {
+  const resolved: DimensionFilters = {};
+
+  for (const [dimension, binding] of Object.entries(bindings) as Array<[DimensionKey, string | undefined]>) {
+    if (!binding) {
+      continue;
+    }
+
+    const values = parseFilterBinding(interpolate(binding));
+    if (values.length) {
+      resolved[dimension] = values;
+    }
+  }
+
+  return resolved;
+}

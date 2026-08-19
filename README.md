@@ -1,117 +1,160 @@
-## Discrete Panel
+# Production Timeline panel for Grafana
 
-[![CircleCI](https://circleci.com/gh/NatelEnergy/grafana-discrete-panel/tree/master.svg?style=svg)](https://circleci.com/gh/NatelEnergy/grafana-discrete-panel/tree/master)
-[![dependencies Status](https://david-dm.org/NatelEnergy/grafana-discrete-panel/status.svg)](https://david-dm.org/NatelEnergy/grafana-discrete-panel)
-[![devDependencies Status](https://david-dm.org/NatelEnergy/grafana-discrete-panel/dev-status.svg)](https://david-dm.org/NatelEnergy/grafana-discrete-panel?type=dev)
+`kobzevra-production-timeline-panel` is a read-only Grafana panel for production jobs and machine states. It is a full React rewrite of the historical Natel Discrete panel concept for Grafana OSS 13.1.1.
 
-This panel shows discrete values in a horizontal graph. This lets show state transitions clearly. It is a good
-choice to display string or boolean data
+The panel is vendor-neutral: it consumes already-normalized interval rows and does not parse DURST, ESKO, LIYU, ZUND, NcStudio, Caldera, Workflow, or any other vendor format.
 
+## Compatibility
 
-### Screenshots
+- Grafana OSS: `>=13.1.1` (13.1.1 is the initial acceptance target)
+- Node.js for development: `>=22`
+- License: MIT
 
-![example](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-multiple.png)
-![example](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-single-1.png)
-![example](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-single-2.png)
-![example](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-single-3.png)
-![example](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-single-4.png)
-![options](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-options-1.png)
-![options](https://raw.githubusercontent.com/NatelEnergy/grafana-discrete-panel/master/src/img/screenshot-options-2.png)
+The implementation uses public Grafana plugin APIs only. It does not use Angular panel controllers, `grafana/app/*`, jQuery, Moment.js, or `@grafana/toolkit`.
 
-### Building
+## Interval input contract
 
-To complie, run:
+Required logical fields:
 
+| Logical field | Default physical field | Meaning |
+| --- | --- | --- |
+| `machine_id` | `machine_id` | stable machine identifier |
+| `state` | `state` | normalized machine state |
+| `started_at` | `started_at` | interval start |
+| `ended_at` | `ended_at` | interval end; null means current/open |
+
+Optional logical fields include `machine_type`, `original_duration`, `job`, `run_id`, `display_class`, `operator`, `material`, `customer`, `manager`, `color_profile`, `print_mode`, `drop_size`, `tool`, `preset`, `commanded_speed`, `quality`, and `details`.
+
+Every physical field name is configurable in panel options. `original_duration` has **no default physical mapping** because the project schema does not yet define one universal storage unit. If it is explicitly mapped, the panel interprets that value as **milliseconds**. When it is not mapped, a closed interval's original duration is safely derived from `ended_at - started_at`.
+
+Grafana time fields may provide epoch milliseconds. Explicit ISO-8601 string fields are also accepted. Arbitrary numeric non-time fields are not guessed to be timestamps.
+
+## Boundary semantics
+
+Dashboard time range is interpreted as a half-open interval:
+
+```text
+[from,to)
 ```
-yarn install
-yarn build
+
+A source interval is relevant when:
+
+```text
+started_at < to
+AND ended_at > from
 ```
 
-### Releasing
+Visible geometry is clipped without changing the original interval:
 
-This plugin uses [release-it](https://github.com/webpro/release-it) to release to GitHub.
-
+```text
+visible_start = max(started_at, from)
+visible_end   = min(ended_at, to)
 ```
-env GITHUB_TOKEN=your_token yarn release-it patch
+
+For an open interval, the visible end is the earlier of dashboard `to` and current time.
+
+The datasource/read model is responsible for returning overlapping intervals and sufficient carry-in information. The panel cannot recover an interval that the query omitted.
+
+## Duration rules
+
+Duration filters are configured as dynamic rows:
+
+```text
+State | Minimum (s) | Maximum (s)
 ```
 
-### Roadmap
+The state selector is populated from state values actually present in the current DataFrame, and additional rows can be added or removed. This allows rules for `gap`, `idle`, `setup`, or any other normalized state without reclassifying one state as another.
 
-- TODO: full annotation support
-- TODO: better documentation
-- release v1.0
+Duration filters use the **original full interval duration**, before range clipping. Legend totals use **visible clipped duration** only.
 
-#### Changelog
+Example: a 40 minute Idle interval with only 5 minutes visible passes a 30 minute minimum rule, but adds only 5 minutes to the visible legend.
 
+## Dynamic filters
 
-##### v0.1.0
+Filters are configured as rows:
 
-- works with Grafana 7 (naming fixed)
-- Building with `@grafana/toolkit`
-- Supports DataFrame directly for 6.4+
+```text
+Field | Value(s)
+```
 
+The field selector is populated from the fields discovered in the current DataFrame. The value selector is populated from values discovered for the selected field and supports multiple values.
 
-##### v0.0.9
+- multiple values within one row are OR;
+- multiple filter rows are AND;
+- custom values and Grafana variable expressions are accepted;
+- rows can be added or removed;
+- the editor initially presents up to four useful field suggestions from the current data.
 
-- Remove `dist` from master
-- Use webpack build
-- FIX: Use background color to clear the background
-- Configurable duration resolution option (thanks @clink-aaron)
-- deploy using release-it
-- Don't hide series names on hover
+The dynamic model allows printer-, cutter-, workflow-, and common production dimensions to use the same panel without a hardcoded per-machine filter form.
 
-##### v0.0.8
+## Job focus
 
-- Support Snapshots (thanks @londonanthonyoleary)
-- Direct link rendered image now works.
-- Support UTC date display
-- Fix display issue with 5.1
-- Merge distinct values in legend unless showing the name
-- Basic Annotation Support
-- Fix mapping numeric data to text
+Job selection modes:
 
-##### v0.0.7
+- `None`: no job restriction.
+- `Filter`: matching job rows are handled by the configured filter mapping.
+- `Focus`: one selected job becomes `Selected job`, all other running jobs become `Other jobs`, and non-running machine states remain visible.
 
-- Switch to typescript
-- Override applyPanelTimeOverrides rather than issueQueries to extend time
-- Support numeric unit conversion
-- New rendering pipeline (thanks @jonyrock)
-- Don't detect duplicate colors from metrics
-- Formatting with prettier.js
-- Only hide hover text when it collides
-- Show time axis (copied from novatec-grafana-discrete-panel)
-- Improved text collision behavior
+A focus selection must resolve to exactly one job and requires an available mapped job field. A multi-value selection is not guessed; the panel shows a diagnostic instead. Focus legend keeps explicit Selected-job and Other-jobs entries even when one visible duration is zero.
 
-##### v0.0.6
+## Time interaction
 
-- Fix for grafana 4.5 (thanks @alin-amana)
+The timeline changes the normal Grafana dashboard time range rather than maintaining a private local viewport:
 
-##### v0.0.5
+- drag empty timeline space or the time axis to pan left/right;
+- drag on a colored segment to select a range; releasing zooms the dashboard to that range;
+- mouse wheel pans in time;
+- `Ctrl + wheel` zooms around the timestamp under the cursor;
+- `Shift + wheel` performs faster panning;
+- horizontal wheel/touchpad delta is accepted for panning.
 
-- Support results from the table format
-- Support results in ascending or decending order
-- Configure legend percentage decimal points
-- Legend can show transition count and distinct value count
-- Clamp percentage stats within the query time window
-- Changed the grafana dependency version to 4.x.x, since 3.x.x was not really supported
-- Fixed issues with tooltip hover position
-- Option to expand 'from' query so the inital state can avoid 'null'
+Very short pointer drags are ignored to avoid accidental zooms. Tooltip hover is suppressed while a time interaction is active.
 
-##### v0.0.4
+## Legend
 
-- Support shared tooltips (not just crosshair)
+The legend is calculated from the exact same transformed intervals that are passed to Canvas. The timeline area uses only the height required by its machine rows and optional axis, so the legend starts immediately below it instead of being pushed to the bottom of a tall panel.
 
-##### v0.0.3
+States report visible duration, percentage, and segment count. Jobs report visible duration, segment count, and distinct `run_id` count when reliable run IDs are available. In multi-machine mode the percentage denominator is selected range duration multiplied by the number of visible machine rows.
 
-- Configure more colors (retzkek)
-- Fix tooltips (retzkek)
-- Configure Text Size
-- Support shared crosshair
+## Data quality
 
-##### v0.0.2
+The panel deliberately refuses misleading exact totals when normalized intervals for the same machine conflict in time.
 
-- Use the panel time shift.
+It distinguishes normalized machine states, running without a resolved job, explicit Unknown/Gap/Stale classes, source no-data regions, and intervals removed by user filters. Missing telemetry is never silently converted to Idle.
 
-##### v0.0.1
+## Colors
 
-- First working version
+Jobs use a stable versioned hash of the normalized job key into a fixed palette, so the same job keeps the same color across interruptions and dashboard reloads.
+
+Explicit color overrides are configured in a separate **Color mappings** modal:
+
+```text
+Field | Value | Color
+```
+
+Both field and value selectors are populated from the current DataFrame. A complete matching mapping overrides the default state/job color. The editor presents four initial mapping rows and supports adding or removing rows. `running` is not automatically mapped by default, preserving deterministic per-job colors unless the user explicitly overrides it.
+
+## Options layout
+
+The option editor follows Grafana 13 native controls while retaining the organization of the historical Discrete panel where it still fits: Display, Legend, Filters, Duration filters, Colors, and Field mappings. A later visual pass can modernize styling without changing these option semantics.
+
+## Development
+
+```bash
+npm install
+npm run test:ci
+npm run typecheck
+npm run lint
+npm run build
+npm run react:detect
+```
+
+Repository CI performs these checks on the rewrite branch. Runtime acceptance is separate from build acceptance and is exercised against Grafana 13.1.1 with a fixed interval fixture.
+
+## Upstream attribution
+
+This repository originated as a fork of `NatelEnergy/grafana-discrete-panel`. The new implementation is a clean React/TypeScript rewrite, but retains the upstream MIT license and attribution. The historical Discrete panel remains the UX reference for horizontal discrete state regions; it is not a runtime dependency.
+
+## Non-goals
+
+This panel does not edit production facts, schedule future jobs, draw Gantt dependencies, control machines, or reconstruct historical intervals from second-by-second points.

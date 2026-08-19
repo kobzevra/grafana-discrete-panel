@@ -1,0 +1,55 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "production-timeline-smoke",
+    "title": "Production Timeline Runtime Smoke",
+    "timezone": "utc",
+    "schemaVersion": 41,
+    "version": 0,
+    "time": {
+      "from": "2026-08-18T08:45:00.000Z",
+      "to": "2026-08-18T10:30:00.000Z"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "type": "kobzevra-production-timeline-panel",
+        "title": "Normal timeline",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+        "datasource": { "type": "grafana-testdata-datasource", "uid": "production-timeline-testdata" },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "grafana-testdata-datasource", "uid": "production-timeline-testdata" },
+            "scenarioId": "csv_content",
+            "csvContent": "machine_id,state,started_at,ended_at,job,run_id\nM1,running,2026-08-18T08:30:00.000Z,2026-08-18T09:20:00.000Z,Job A,run-a\nM1,paused,2026-08-18T09:20:00.000Z,2026-08-18T09:35:00.000Z,,run-a\nM1,running,2026-08-18T09:35:00.000Z,2026-08-18T10:10:00.000Z,Job A,run-a\nM1,running,2026-08-18T10:10:00.000Z,2026-08-18T11:00:00.000Z,Job B,run-b\nM2,idle,2026-08-18T08:45:00.000Z,2026-08-18T10:30:00.000Z,,"
+          }
+        ],
+        "options": { "showLegend": true, "showAxis": true, "rowHeight": 28 }
+      },
+      {
+        "id": 2,
+        "type": "kobzevra-production-timeline-panel",
+        "title": "Job focus timeline",
+        "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+        "datasource": { "type": "grafana-testdata-datasource", "uid": "production-timeline-testdata" },
+        "targets": [
+          {
+            "refId": "A",
+            "datasource": { "type": "grafana-testdata-datasource", "uid": "production-timeline-testdata" },
+            "scenarioId": "csv_content",
+            "csvContent": "machine_id,state,started_at,ended_at,job,run_id\nM1,running,2026-08-18T08:30:00.000Z,2026-08-18T09:20:00.000Z,Job A,run-a\nM1,paused,2026-08-18T09:20:00.000Z,2026-08-18T09:35:00.000Z,,run-a\nM1,running,2026-08-18T09:35:00.000Z,2026-08-18T10:10:00.000Z,Job A,run-a\nM1,running,2026-08-18T10:10:00.000Z,2026-08-18T11:00:00.000Z,Job B,run-b\nM2,idle,2026-08-18T08:45:00.000Z,2026-08-18T10:30:00.000Z,,"
+          }
+        ],
+        "options": {
+          "showLegend": true,
+          "showAxis": true,
+          "rowHeight": 28,
+          "jobMode": "focus",
+          "filters": { "job": "Job A" }
+        }
+      }
+    ]
+  },
+  "overwrite": true
+}

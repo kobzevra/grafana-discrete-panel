@@ -1,0 +1,88 @@
+name: Grafana 13.1.1 runtime smoke
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Install dependencies and build
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npx playwright install chromium
+
+      - name: Start Grafana 13.1.1 with unsigned development plugin
+        shell: bash
+        run: |
+          mkdir -p runtime-logs
+          docker run -d --name grafana \
+            -p 3000:3000 \
+            -e GF_SECURITY_ADMIN_PASSWORD=admin \
+            -e GF_AUTH_ANONYMOUS_ENABLED=true \
+            -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+            -e GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=kobzevra-production-timeline-panel \
+            -v "$PWD/dist:/var/lib/grafana/plugins/kobzevra-production-timeline-panel:ro" \
+            grafana/grafana:13.1.1
+
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3000/api/health > runtime-logs/health.json; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/api/health | tee runtime-logs/health-final.json
+
+      - name: Provision TestData source and smoke dashboard
+        shell: bash
+        run: |
+          curl -fsS -u admin:admin \
+            -H 'Content-Type: application/json' \
+            -X POST http://127.0.0.1:3000/api/datasources \
+            -d '{"name":"Production Timeline TestData","uid":"production-timeline-testdata","type":"grafana-testdata-datasource","access":"proxy"}' \
+            | tee runtime-logs/datasource.json
+
+          curl -fsS -u admin:admin \
+            -H 'Content-Type: application/json' \
+            -X POST http://127.0.0.1:3000/api/dashboards/db \
+            --data-binary @tests/runtime-dashboard.json \
+            | tee runtime-logs/dashboard.json
+
+          curl -fsS -u admin:admin \
+            http://127.0.0.1:3000/api/plugins/kobzevra-production-timeline-panel/settings \
+            | tee runtime-logs/plugin-settings.json
+
+      - name: Run browser smoke fixture
+        env:
+          GRAFANA_URL: http://127.0.0.1:3000
+        run: npm run test:runtime
+
+      - name: Capture Grafana logs
+        if: always()
+        run: docker logs grafana > runtime-logs/grafana.log 2>&1 || true
+
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grafana-13.1.1-runtime-smoke
+          path: |
+            runtime-logs
+            test-results
+            playwright-report
+          if-no-files-found: ignore

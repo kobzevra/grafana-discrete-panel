@@ -1,0 +1,8 @@
+import { defineConfig } from 'eslint/config';
+import grafanaConfig from '@grafana/eslint-config/flat.js';
+
+export default defineConfig([
+  ...grafanaConfig,
+  { rules: { 'react/prop-types': 'off' } },
+  { files: ['src/**/*.{ts,tsx}'], languageOptions: { parserOptions: { project: './tsconfig.json' } }, rules: { '@typescript-eslint/no-deprecated': 'warn' } },
+]);
