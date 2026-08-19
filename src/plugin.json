@@ -13,8 +13,8 @@
       { "name": "Upstream attribution", "url": "https://github.com/NatelEnergy/grafana-discrete-panel" }
     ],
     "screenshots": [],
-    "version": "0.1.0",
-    "updated": "2026-08-18"
+    "version": "0.2.0",
+    "updated": "2026-08-19"
   },
   "dependencies": { "grafanaDependency": ">=13.1.1", "plugins": [] }
 }
